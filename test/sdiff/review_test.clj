@@ -60,3 +60,13 @@
   (is (= "APPROVE" (:event (:payload (review/draft report :approve nil [])))) "an empty approval is allowed")
   (is (thrown? Exception (review/draft report "lgtm" nil [])))
   (is (thrown? Exception (review/draft report "comment" "" [])) "a comment review needs content"))
+
+(deftest notes-may-use-what-the-text-report-prints
+  (let [line (line-of "(dev-id-conflicts entries)")
+        lands (fn [note] (-> (review/draft (assoc report :names {:paths {path "registry.cljc"} :nss {}}) "comment" "" [(assoc note :body "b")])
+                             :payload :comments first :line))]
+    (testing "a short file name from the legend"
+      (is (= line (lands {:file "registry.cljc" :form "defn compile!" :at "arity 1 › let 2 › binding dev-id-conflicts"}))))
+    (testing "the end of a path, as printed after an elided start"
+      (is (= line (lands {:file path :form "defn compile!" :at "‥ › binding dev-id-conflicts"})))
+      (is (= line (lands {:file path :form "defn compile!" :at "binding dev-id-conflicts"}))))))

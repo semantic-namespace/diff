@@ -4,8 +4,11 @@
   A note is `{:file :form :at :body}`: `:form` names a top-level form as the
   report prints it (`defn compile!`, or just `compile!` when that is unique in
   the file), `:at` optionally names a change inside it by its printed path
-  (`arity 1 › let 2 › binding dev-id-conflicts`). `:line` (and `:start-line`)
-  may be given instead, as an escape hatch.
+  (`arity 1 › let 2 › binding dev-id-conflicts`), or by any end of that path
+  no other change in the form shares (`‥ › binding dev-id-conflicts`). Files,
+  forms and paths may be written with the short names a report's `:names`
+  table gives them. `:line` (and `:start-line`) may be given instead, as an
+  escape hatch.
 
   Each note is anchored to head-side lines: a change's new expression, or for a
   form-level note the first line of the form that the PR touched. GitHub only
@@ -14,17 +17,36 @@
   body instead. Nothing is dropped; the result says where each note went."
   (:require [clojure.string :as str]
             [sdiff.core :as core]
-            [sdiff.hunks :as hunks]))
+            [sdiff.hunks :as hunks]
+            [sdiff.names :as names]))
 
 (def events {"approve" "APPROVE" "request-changes" "REQUEST_CHANGES" "comment" "COMMENT"})
 
 (defn- id-str [id] (str/join " " (remove nil? (map str id))))
 
+(def ^:private ^:dynamic *names* nil)
+
+(defn- spells? [given full] (or (= given full) (and *names* (= given (names/shorten-text *names* full)))))
+
 (defn- find-form [{:keys [forms]} form]
   (let [form (str/trim (str form))]
-    (or (some #(when (= form (id-str (:id %))) %) forms)
-        (let [hits (filter #(some #{form} (map str (:id %))) forms)]
+    (or (some #(when (spells? form (id-str (:id %))) %) forms)
+        (let [hits (filter #(some (partial spells? form) (map str (:id %))) forms)]
           (when (= 1 (count hits)) (first hits))))))
+
+(defn- elided [at] (str/replace (str/trim at) #"^(‥|…|\.\.)\s*›\s*" ""))
+
+(defn find-change
+  "The change in `form` that `at` names: its whole printed path, or an end of
+  it that no other change in the form shares."
+  [{:keys [changes]} at]
+  (let [at (elided at)
+        path-of (comp core/fmt-path :path)
+        ends? (fn [c] (let [p (path-of c)]
+                        (or (spells? at p)
+                            (some #(spells? at (core/fmt-path (drop % (:path c)))) (range 1 (count (:path c)))))))]
+    (or (some #(when (spells? at (path-of %)) %) changes)
+        (let [hits (filter ends? changes)] (when (= 1 (count hits)) (first hits))))))
 
 (defn- rows [node] (let [{:keys [row end-row]} (meta node)] (when row [row end-row])))
 
@@ -40,7 +62,7 @@
         (nil? f) {:error (str "no changed form named " (pr-str (:form note)) " in " (:path file))}
         (= :removed-form (:op (first (:changes f)))) {:error "the form was removed, so it has no line in the new code"}
         (:at note)
-        (let [c (some #(when (= (str/trim (:at note)) (core/fmt-path (:path %))) %) (:changes f))]
+        (let [c (find-change f (:at note))]
           (cond (nil? c) {:error (str "no change at " (pr-str (:at note)) " in " (id-str (:id f)))}
                 (:new c) (rows (:new c))
                 :else (rows (head-node file f))))
@@ -52,7 +74,7 @@
 (defn place
   "Where one note goes: `{:inline {...github comment...}}` or `{:body reason}`."
   [report note]
-  (let [file (some #(when (= (:file note) (:path %)) %) (:clj report))
+  (let [file (some #(when (spells? (some-> (:file note) str/trim) (:path %)) %) (:clj report))
         loc (if file (locate file note) {:error (str "no changed Clojure file " (pr-str (:file note)))})]
     (if (map? loc)
       {:note note :body (:error loc)}
@@ -72,7 +94,7 @@
   `verdict` is approve, request-changes or comment."
   [report verdict summary notes]
   (let [event (or (events (name verdict)) (throw (ex-info (str "verdict must be one of " (str/join ", " (keys events))) {:verdict verdict})))
-        placed (mapv #(place report %) notes)
+        placed (binding [*names* (:names report)] (mapv #(place report %) notes))
         inline (keep :inline placed)
         outside (filter :body placed)
         body (str/trim (str summary

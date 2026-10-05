@@ -30,7 +30,8 @@
     (is (= "in invoice.clj: :spec.invoice/lines" (second (nth out 2))))
     (is (= [:pre.code "(ns co.acme.billing.spec.invoice)"] (nth out 3)))
     (is (= {"co.acme.billing.spec.invoice" "spec.invoice"}
-           (:nss (names/used t "only :co.acme.billing.spec.invoice/lines here"))) "the legend lists only names the page uses")))
+           (:nss (names/used t (apply str (repeat 3 ":co.acme.billing.spec.invoice/lines "))))) "the legend lists only names the page uses")
+    (is (empty? (:nss (names/used t "once :co.acme.billing.spec.invoice/lines"))) "a name used once costs more in the legend than it saves")))
 
 (deftest only-qualified-names-are-shortened
   (let [t {:paths {} :nss {"org.acme.billing.core" "billing"}}]

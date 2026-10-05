@@ -8,6 +8,18 @@
 
 (defn- kept-list [kept] (str/join ", " (map #(short (n/string (first %))) kept)))
 
+(defn- shown-path
+  "`path` as printed: with the start it shares with the previous change's path
+  left out, when what remains still names only this change."
+  [changes path prev]
+  (let [k (count (take-while true? (map = path prev)))
+        tail (fmt-path (drop k path))
+        others (remove #(= path (:path %)) changes)]
+    (if (and (>= k 2) (< k (count path))
+             (not-any? #(let [q (fmt-path (:path %))] (or (= q tail) (str/ends-with? q (str " › " tail)))) others))
+      (str "‥ › " tail)
+      (fmt-path path))))
+
 (defn print-file [{:keys [path verdict forms status moved]}]
   (println (str "\n■ " path "   [" (name verdict) (case status "A" ", new file" "D" ", deleted" "") "]"))
   (doseq [id moved] (println (str "  " (str/join " " (map str id)) "   ↕ moved to a different position among the forms")))
@@ -16,8 +28,8 @@
                   (when was (str "   ⇠ was " (str/join " " (map str was))))
                   (when note (str "   ⚠ " note))
                   (when extraction (str "   ⇠ extracted from " (fmt-path (cons (str/join " " (map str (:from extraction))) (:from-path extraction)))))))
-    (doseq [{:keys [op path old new extracted rename] :as c} changes]
-      (let [p (if (seq path) (str (fmt-path path) " ") "")]
+    (doseq [[{:keys [op path old new extracted rename] :as c} prev] (map vector changes (cons nil changes))]
+      (let [p (if (seq path) (str (shown-path changes path (:path prev)) " ") "")]
         (println (case op
                    :added-form   "    + new form"
                    :removed-form "    - form removed"

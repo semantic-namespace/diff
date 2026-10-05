@@ -23,3 +23,12 @@
 (deftest a-short-form-is-shown-whole
   (let [old (src 4)]
     (is (not (str/includes? (page-of old (str/replace old "(step-2 x)" "(step-2 y)")) "sbs excerpt")))))
+
+(deftest sibling-changes-print-their-shared-path-once
+  (let [out (with-out-str
+              ((requiring-resolve 'sdiff.render.text/print-file)
+               (core/file-report "a.clj"
+                                 "(ns a)\n(defn f [x]\n  (let [m (g x)]\n    (h {:mode :scan :a 1} m)))\n"
+                                 "(ns a)\n(defn f [x]\n  (let [m (g x)]\n    (h {:purpose :scan :a 2} m)))\n")))]
+    (is (str/includes? out "› map 1 › key :mode"))
+    (is (str/includes? out "‥ › key :purpose = :scan"))))

@@ -145,7 +145,7 @@
     (try
       (let [{:keys [pr verdict summary notes]} (json/parse-string (slurp (:body req)) true)
             r (github/cached-report pr)
-            {:keys [payload placed]} (review/draft r verdict summary notes)]
+            {:keys [payload placed]} (review/draft (assoc r :names (names-of r)) verdict summary notes)]
         (if-not post?
           (json-response 200 {:payload payload :placed placed})
           (let [{:keys [repo num]} (:pr r)

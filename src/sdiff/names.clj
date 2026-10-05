@@ -104,11 +104,14 @@
         (walk* h)))))
 
 (defn used
-  "The part of the table whose full names occur in `text`."
+  "The part of the table worth using in `text`: names that occur in it and save
+  more characters there than their legend entry costs."
   [t text]
   (when t
-    (let [in? (fn [[full _]] (str/includes? text full))]
-      {:paths (into {} (filter in? (:paths t))) :nss (into {} (filter in? (:nss t)))})))
+    (let [pays? (fn [[full short]]
+                  (let [n (count (re-seq (re-pattern (java.util.regex.Pattern/quote full)) text))]
+                    (> (* n (- (count full) (count short))) (+ (count full) (count short) 5))))]
+      {:paths (into {} (filter pays? (:paths t))) :nss (into {} (filter pays? (:nss t)))})))
 
 (defn hiccup-strings [h]
   (cond (string? h) [h]
