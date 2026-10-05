@@ -27,6 +27,16 @@ tool on 2026-10-05.
 CI on every PR is dropped from the MVP: reviews are on demand, through the MCP
 server. The remote server is the next milestone, replacing M4.
 
+## The page, as of 2026-10-05
+
+The report page is the review. Everything on it is one of two kinds, and
+labelled: **derived** content comes from a tool named on the label (sdiff for
+structure; a host's decorations beside each form and at the top, the atlas
+`review` module's from a registry version); **inferred** content is an
+annotation from a reviewer or a model, with its author and the derived facts it
+rests on. The earlier idea of a model-composed walk of steps was dropped: it
+duplicated the report and made the reader trust the model's selection.
+
 ## Milestones
 
 ### M1. Pairing gaps that real PRs hit (done)
