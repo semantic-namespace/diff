@@ -37,6 +37,10 @@ annotation from a reviewer or a model, with its author and the derived facts it
 rests on. The earlier idea of a model-composed walk of steps was dropped: it
 duplicated the report and made the reader trust the model's selection.
 
+The model's part is a protocol, shipped as the MCP prompt `review`: get the
+decorated report (the same derived facts the page shows, as text), annotate
+with a basis per claim, draft, and post only on the user's word.
+
 ## Milestones
 
 ### M1. Pairing gaps that real PRs hit (done)
