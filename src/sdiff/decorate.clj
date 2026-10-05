@@ -23,6 +23,20 @@
 (defn add-form-decorator! "`(fn [ctx file form] hiccup-or-nil)`" [k f] (swap! form-decorators put k f))
 (defn add-header-decorator! "`(fn [ctx report] hiccup-or-nil)`" [k f] (swap! header-decorators put k f))
 (defn add-ref-validator! "`(fn [ctx on] problem-string-or-nil)`" [k f] (swap! ref-validators put k f))
+(defonce groupers (atom []))
+
+(defn add-grouper!
+  "`(fn [ctx report] sections)`, a grouping of the changed forms offered on the
+  page as `label`; `source` names the tool its groups are derived from."
+  [k label source f]
+  (swap! groupers (fn [gs] (conj (vec (remove #(= k (:key %)) gs)) {:key k :label label :source source :f f}))))
+
+(defn grouping
+  "The view for grouper `k` over the report in `ctx`, or nil when there is no such grouper."
+  [ctx k]
+  (when-let [{:keys [label source f]} (some #(when (= (name k) (name (:key %))) %) @groupers)]
+    {:title (str "Grouped by " label) :derived source :sections (vec (f ctx (:report ctx)))}))
+
 (defn add-entity-renderer! "`(fn [ctx id] hiccup-or-nil)`, the derived view of one entity for a view item" [k f] (swap! entity-renderers put k f))
 
 (defn form-id [form] (str/join " " (remove nil? (map str (:id form)))))

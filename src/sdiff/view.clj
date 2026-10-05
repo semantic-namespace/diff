@@ -73,17 +73,21 @@
     (list
      [:header.view-head
       [:h1 (:title view)]
-      [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report" (when (:question view) (list " · answers: " [:em (:question view)]))]
+      (if (:derived view)
+        [:p.prov "derived · " (:derived view) " · the full report, regrouped"]
+        [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report" (when (:question view) (list " · answers: " [:em (:question view)]))])
       (when (:intro view) [:p.intro (decorate/code-spans (:intro view))])]
+     [:div.fold-all
+      [:button {:type "button" :onclick "document.querySelectorAll('details.view-section').forEach(d=>d.open=true)"} "expand all"]
+      [:button {:type "button" :onclick "document.querySelectorAll('details.view-section').forEach(d=>d.open=false)"} "collapse all"]]
      [:nav.toc (for [[i s] (map-indexed vector (:sections view))] [:a {:href (str "#view-" (inc i))} (str (inc i) ". " (:title s))])]
      (for [[i s] (map-indexed vector (:sections view))
-           :let [body (list (when (:claim s) [:p.claim.inferred-claim (decorate/code-spans (:claim s))])
+           :let [n (count (:items s))
+                 body (list (when (:claim s) [:p.claim {:class (when-not (:derived view) "inferred-claim")} (decorate/code-spans (:claim s))])
                             (for [item (:items s)] (render-item report item)))]]
-       (if (:folded s)
-         [:details.view-section {:id (str "view-" (inc i))}
-          [:summary [:h2 [:span.n (str (inc i))] (:title s) [:span.mute " · folded"]]] body]
-         [:section.view-section {:id (str "view-" (inc i))}
-          [:h2 [:span.n (str (inc i))] (:title s)] body]))
+       [:details.view-section {:id (str "view-" (inc i)) :open (not (:folded s))}
+        [:summary [:h2 [:span.n (str (inc i))] (:title s) [:span.mute (str " · " n " item" (when (not= 1 n) "s") (when (:folded s) " · folded"))]]]
+        body])
      [:details.everything-else
-      [:summary (str "Everything else: " (count rest-files) " file" (when (not= 1 (count rest-files)) "s") " the view did not single out")]
+      [:summary (str "Everything else: " (count rest-files) " file" (when (not= 1 (count rest-files)) "s") (if (:derived view) " outside every group" " the view did not single out"))]
       (for [f rest-files] (html/file-view nil nil f))])))

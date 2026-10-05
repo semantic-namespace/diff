@@ -17,6 +17,7 @@
             [hiccup2.core :as hc]
             [org.httpkit.server :as http]
             [sdiff.github :as github]
+            [sdiff.group :as group]
             [sdiff.render.html :as html]
             [sdiff.render.text :as text]
             [sdiff.review :as review]
@@ -90,29 +91,40 @@
   (let [k [(get-in r [:pr :repo]) (:num r) (:head r)]]
     (or (@names-cache k) (let [t (names/table r)] (swap! names-cache assoc k t) t))))
 
-(defn- pr-text [ref]
+(defn- pr-text [ref grouping]
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
     (binding [decorate/*ctx* ctx]
-      (let [body (with-out-str (text/print-report r))
+      (let [g (when grouping (decorate/grouping ctx grouping))
+            body (str (when g (group/outline-text g)) (with-out-str (text/print-report r)))
             used (names/used (names-of r) body)]
         (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n"
              (names/legend-text used) "\n"
              (names/shorten-text used body))))))
 
-(defn- pr-page [ref view-name]
+(defn- switcher [ref current]
+  (let [href (fn [g] (str "/pr?ref=" (java.net.URLEncoder/encode ref "UTF-8") (when g (str "&group=" (name g)))))]
+    [:nav.group-switch "Group by "
+     [:a {:href (href nil) :class (when-not current "on")} "file"]
+     (for [{:keys [key label]} @decorate/groupers]
+       [:a {:href (href key) :class (when (= (name key) current) "on")} label])]))
+
+(defn- pr-page [ref view-name grouping]
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         config (page-config r)
         review (state/review repo num)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
-        v (when view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name))))]
+        v (cond view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name)))
+                grouping (decorate/grouping ctx grouping))]
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
                  :names (names-of r)
+                 :before (switcher ref (when-not view-name grouping))
                  :body (cond v (view/render r v)
-                             view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))])
+                             view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))]
+                             grouping [:p.deco.deco-problem (str "no grouping named " (pr-str grouping))])
                  :extra-head [:style (hc/raw (resource "review.css"))]
                  :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
                                    [:script (hc/raw (resource "review.js"))])))))
@@ -183,8 +195,8 @@
       [:get "/"]       (html-response (index-page))
       [:get "/pr"]     (if-let [ref (query-param req "ref")]
                          (if (= "text" (query-param req "format"))
-                           {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref)}
-                           (html-response (pr-page ref (query-param req "view"))))
+                           {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref (query-param req "group"))}
+                           (html-response (pr-page ref (query-param req "view") (query-param req "group"))))
                          {:status 302 :headers {"Location" "/"}})
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))

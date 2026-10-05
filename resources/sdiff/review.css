@@ -84,3 +84,11 @@ details.everything-else>summary{font-size:1rem;color:var(--mute);cursor:pointer;
 details.legend{margin:.4rem 0 1rem;font-size:.85rem;color:var(--mute)}
 table.legend-table{border-collapse:collapse;margin:.3rem 0}
 table.legend-table td{padding:.1rem .8rem .1rem 0}
+.view-section>summary{cursor:pointer;list-style:none}
+.view-section>summary::-webkit-details-marker{display:none}
+.view-section>summary h2::before{content:"▸";color:var(--mute);font-size:.9rem}
+.view-section[open]>summary h2::before{content:"▾"}
+.fold-all,.group-switch{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.8rem 0;font-size:.85rem;color:var(--mute)}
+.fold-all button{font:inherit;padding:.2rem .6rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+.group-switch a{padding:.15rem .55rem;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--ink)}
+.group-switch a.on{background:var(--ext);color:var(--panel);border-color:transparent}

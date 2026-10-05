@@ -187,7 +187,7 @@
   `extra-head` and `extra-body` are hiccup appended to head and body, which is
   how the local review server adds its review panel. `body` replaces the
   per-PR content, which is how a view renders over the same page."
-  [gh-url repo-name prs & {:keys [extra-head extra-body body names]}]
+  [gh-url repo-name prs & {:keys [extra-head extra-body body before names]}]
   (str "<!doctype html>"
        (hc/html
         [:html {:lang "en"}
@@ -206,9 +206,10 @@
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
              ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]
             [:p.legend [:span.prov.legend-derived "derived"] " comes from a tool, named on the label. " [:span.prov.legend-inferred "inferred"] " is a reviewer's or a model's reading of it, with the derived facts it rests on."]]
-           (let [content (or body
-                             (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
-                                   (map (partial pr-view gh-url) prs)))
+           (let [content (list before
+                               (or body
+                                   (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
+                                         (map (partial pr-view gh-url) prs))))
                  used (when names (names/used names (apply str (names/hiccup-strings content))))]
              (list (when used (names/legend used))
                    (names/shorten-hiccup used content)))]
