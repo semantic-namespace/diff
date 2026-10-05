@@ -2,6 +2,7 @@
   "A self-contained HTML page for one or more pull requests. Files are sorted by
   verdict and only behaviour-changing files are expanded; each form is shown
   whole, with the changed and kept parts marked in the source."
+  (:refer-clojure :exclude [short])
   (:require [rewrite-clj.node :as n]
             [clojure.string :as str]
             [hiccup2.core :as hc]

@@ -34,6 +34,30 @@ bb sdiff html <repo> <out.html> <github-url|-> (<base> <head> <num> <title>)+
 Ranges are diffed from the merge base of `base` and `head`, which is what a
 pull request shows. For a squash-merged commit `C`, pass `C^ C`.
 
+GitHub pull requests are read through the `gh` CLI with your own credentials,
+without a clone:
+
+```
+bb sdiff pr <owner/repo#N|url> [text|edn|html <out.html>]
+bb sdiff review <owner/repo#N|url> <notes.edn> [--post]
+```
+
+`review` turns notes written against form paths into a GitHub review. A notes
+file looks like this:
+
+```clojure
+{:verdict :request-changes
+ :summary "The extraction changes behaviour, see below."
+ :notes [{:file "core/src/atlas/registry.cljc"
+          :form "defn compile!"
+          :at   "arity 1 › let 2 › binding dev-id-conflicts"
+          :body "Was the new :winner value intended?"}]}
+```
+
+It prints where each note lands, inline on a head-side line or in the review
+body when GitHub would refuse it inline, then the payload. With `--post` it
+asks before posting as you.
+
 `edn` is the contract for other tools: the report map with every node as
 `{:src :row :col :end-row :end-col}`, so a consumer can print a form, anchor a
 review comment to a head-side line, or re-read the source. `html` is a
@@ -42,6 +66,20 @@ self-contained page with the whole form shown and the changes marked.
 As a library, `sdiff.core/file-report` takes a path and two source strings,
 `sdiff.git/report` takes a repo and two refs, `sdiff.edn/report->edn` makes the
 result plain data.
+
+## MCP server
+
+The same three operations as MCP tools, over stdio, on the JVM (plumcp does
+not run on babashka): `structural-diff`, `review-draft` and `post-review`. The
+last one is annotated as a destructive write, so clients ask before calling it.
+It acts with the `gh` credentials of whoever runs it.
+
+```
+claude mcp add sdiff -- bash -c 'cd /path/to/diff && exec clojure -M:mcp'
+```
+
+Set `SDIFF_MCP_DEBUG=1` to log MCP
+traffic to stderr.
 
 ## Tests
 

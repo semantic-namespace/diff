@@ -1,5 +1,6 @@
 (ns sdiff.render.text
   "Plain-text rendering of a report, one block per file."
+  (:refer-clojure :exclude [short])
   (:require [rewrite-clj.node :as n]
             [clojure.string :as str]
             [sdiff.core :refer [fmt-path head short]]))

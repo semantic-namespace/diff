@@ -19,7 +19,12 @@ ones GitHub already gave them.
 
 Done: form-level diff, file verdicts, moves, extraction with drift and renamed
 locals, rename roll-up across files, text / edn / html output, merge-base
-ranges, 10 tests over atlas PRs #7, #4 and #2.
+ranges. M2 and M3 below. A local MCP server (stdio, plumcp 0.3.0) with
+`structural-diff`, `review-draft` and `post-review`. 15 tests over atlas PRs
+#7, #4 and #2. Posting a review has not been exercised against GitHub yet.
+
+CI on every PR is dropped from the MVP: reviews are on demand, through the MCP
+server. The remote server is the next milestone, replacing M4.
 
 ## Milestones
 
@@ -49,7 +54,15 @@ ranges, 10 tests over atlas PRs #7, #4 and #2.
 - `sdiff.git/report` and the new provider share one shape, so every renderer and
   `review` work on both.
 
-### M4. Report on every PR
+### M4 (replaced). Remote MCP server
+
+- The same tools over streamable HTTP, so claude.ai can use them.
+- Login through the plumcp fork's auth-server module with a GitHub identity
+  provider that keeps each user's GitHub token for the session; tools call the
+  API with that token instead of `gh`.
+- Client ID Metadata Documents alongside dynamic client registration.
+
+### M4 (original, dropped from the MVP). Report on every PR
 
 - A GitHub Action, first in atlas (public, no secrets), then in yorba-clj.
 - Job summary gets the text report, the Checks API gets one annotation per

@@ -288,6 +288,8 @@
         [{:op :reshaped :path path :old a :new b :kept kept}]
         [{:op :replaced :path path :old a :new b}]))))
 
+(defn clj? "Is this path Clojure source or EDN?" [p] (boolean (re-find #"\.(clj|cljs|cljc|edn|bb)$" p)))
+
 (defn forms [src] (remove skip? (n/children (p/parse-string-all src))))
 (defn index [src] (into {} (map (juxt top-id identity) (forms src))))
 
