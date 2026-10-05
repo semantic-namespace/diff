@@ -81,6 +81,10 @@ exact payload, and a post button that asks before sending. It posts through
 token printed into the page, so other sites in the browser can't use it.
 Unsent notes are kept in the browser per PR head commit.
 
+`bb sdiff serve 7878 --host <address>` serves on another interface, such as a
+VPN address. Then every request needs the access link printed at startup;
+anyone holding it can read PRs and post reviews as you, so keep it to yourself.
+
 ## MCP server
 
 The same three operations as MCP tools, over stdio, on the JVM (plumcp does

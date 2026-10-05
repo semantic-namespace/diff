@@ -6,7 +6,8 @@
     html   <repo> <out.html> <gh-url|-> (<base> <head> <num> <title>)+
     pr     <owner/repo#N|url> [text|edn|html <out.html>]
     review <owner/repo#N|url> <notes.edn> [--post]
-    serve  [port]                      local review UI on 127.0.0.1 (default 7878)
+    serve  [port] [--host addr]        review UI (default 127.0.0.1:7878); any other
+                                       host requires the printed access link
 
   Local ranges are diffed from the merge base of base and head, which is what a
   pull request shows. For a squash-merged commit C, use `C^ C`. `pr` and
@@ -78,9 +79,12 @@
                "html" (do (spit out (html/page (str "https://github.com/" (get-in r [:pr :repo])) (get-in r [:pr :repo]) [r]))
                           (println "wrote" out))))
     "review" (let [[ref notes-file flag] args] (review! ref notes-file (= "--post" flag)))
-    "serve" (let [port (parse-long (or (first args) "7878"))]
-              (serve/start! port)
-              (println (str "sdiff review UI on http://127.0.0.1:" port "/  (Ctrl-C to stop)"))
+    "serve" (let [host (second (drop-while #(not= "--host" %) args))
+                  port (parse-long (or (first (remove #{"--host" host} args)) "7878"))
+                  {:keys [url]} (serve/start! port (or host "127.0.0.1"))]
+              (println (str "sdiff review UI on " url "  (Ctrl-C to stop)"))
+              (when-not (serve/loopback? (or host "127.0.0.1"))
+                (println "Anyone with this link can read PRs and post reviews as your GitHub user. Share it only with yourself."))
               @(promise))
     (do (println (:doc (meta (find-ns 'sdiff.main))))
         (System/exit 2))))
