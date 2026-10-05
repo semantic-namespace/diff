@@ -6,6 +6,7 @@
     html   <repo> <out.html> <gh-url|-> (<base> <head> <num> <title>)+
     pr     <owner/repo#N|url> [text|edn|html <out.html>]
     review <owner/repo#N|url> <notes.edn> [--post]
+    serve  [port]                      local review UI on 127.0.0.1 (default 7878)
 
   Local ranges are diffed from the merge base of base and head, which is what a
   pull request shows. For a squash-merged commit C, use `C^ C`. `pr` and
@@ -23,7 +24,8 @@
             [sdiff.github :as github]
             [sdiff.render.html :as html]
             [sdiff.render.text :as text]
-            [sdiff.review :as review]))
+            [sdiff.review :as review]
+            [sdiff.serve :as serve]))
 
 (defn- repo-name [repo gh-url]
   (if gh-url
@@ -76,5 +78,9 @@
                "html" (do (spit out (html/page (str "https://github.com/" (get-in r [:pr :repo])) (get-in r [:pr :repo]) [r]))
                           (println "wrote" out))))
     "review" (let [[ref notes-file flag] args] (review! ref notes-file (= "--post" flag)))
+    "serve" (let [port (parse-long (or (first args) "7878"))]
+              (serve/start! port)
+              (println (str "sdiff review UI on http://127.0.0.1:" port "/  (Ctrl-C to stop)"))
+              @(promise))
     (do (println (:doc (meta (find-ns 'sdiff.main))))
         (System/exit 2))))

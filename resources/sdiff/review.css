@@ -1,0 +1,27 @@
+body{padding-bottom:4rem}
+.sd-add{margin-left:.5rem;font:inherit;font-size:.75rem;color:var(--sem);background:transparent;border:1px solid var(--line);border-radius:4px;padding:.05rem .4rem;cursor:pointer}
+.sd-add:hover{background:var(--panel);border-color:var(--sem)}
+li.chg .sd-add{justify-self:start;margin:.2rem 0 0}
+.sd-editor{margin:.4rem 0 .6rem;display:grid;gap:.4rem}
+.sd-editor textarea,.sd-body textarea,.sd-body select,form.open input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.4rem .5rem;width:100%;box-sizing:border-box}
+.sd-row{display:flex;gap:.5rem;flex-wrap:wrap}
+.sd-row button,form.open button{font:inherit;font-size:.9rem;color:var(--panel);background:var(--sem);border:0;border-radius:4px;padding:.35rem .8rem;cursor:pointer}
+.sd-row button.sd-quiet,.sd-notes .sd-quiet{color:var(--mute);background:transparent;border:1px solid var(--line)}
+.sd-row button:disabled{opacity:.45;cursor:not-allowed}
+.sd-panel{position:fixed;right:1rem;bottom:1rem;width:min(26rem,calc(100vw - 2rem));max-height:calc(100vh - 2rem);display:flex;flex-direction:column;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:10}
+.sd-head{display:flex;justify-content:space-between;gap:.6rem;padding:.6rem .8rem;cursor:pointer;font-size:.9rem}
+.sd-count{color:var(--mute)}
+.sd-body{display:none;overflow:auto;padding:0 .8rem .8rem;gap:.6rem}
+.sd-panel.sd-open .sd-body{display:grid}
+.sd-body label{font-size:.85rem;color:var(--mute);display:flex;align-items:center;gap:.5rem}
+.sd-body label select{width:auto}
+.sd-hint{margin:0;font-size:.8rem;color:var(--mute)}
+.sd-notes{margin:0;padding-left:1.2rem;font-size:.85rem;display:grid;gap:.5rem}
+.sd-notes code{font-size:.8rem;color:var(--mute);overflow-wrap:anywhere}
+.sd-notes .sd-quiet{font:inherit;font-size:.75rem;border-radius:4px;padding:0 .4rem;cursor:pointer;margin-top:.15rem}
+.sd-out{font-size:.85rem}
+.sd-placed{margin:0 0 .4rem;padding-left:1rem}
+.sd-inline{color:var(--add)}
+.sd-inbody{color:var(--ext)}
+.sd-out pre{font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.5rem;max-height:16rem;overflow:auto}
+form.open{display:flex;gap:.5rem;max-width:40rem}

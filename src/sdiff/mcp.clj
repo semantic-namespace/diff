@@ -20,15 +20,7 @@
             [sdiff.render.text :as text]
             [sdiff.review :as review]))
 
-(defonce ^:private cache (atom {}))
-
-(defn pr-report
-  "Report for a PR reference, fetched once per head commit."
-  [pr]
-  (let [info (github/pr-info (github/parse-pr pr))
-        k [(:repo info) (:num info) (:head info)]]
-    (or (@cache k)
-        (let [r (github/report info)] (swap! cache assoc k r) r))))
+(defn pr-report [pr] (github/cached-report pr))
 
 (defn- text-result [s] (eg/make-call-tool-result [(eg/make-text-content s)]))
 

@@ -71,18 +71,21 @@
                    [:code.del (short (n/string old))] [:code.add (short (n/string new))] mv])
       nil)))
 
-(defn- form-view [{:keys [old new]} {:keys [id changes extraction note]}]
+(defn- with-attrs [[tag & more] attrs] (into [tag attrs] more))
+
+(defn- form-view [{:keys [old new path]} {:keys [id changes extraction note]}]
   (let [op0 (:op (first changes))
         full? (#{:added-form :removed-form} op0)
         node-old (when-not (= op0 :added-form) (get (index old) id))
         node-new (when-not (= op0 :removed-form) (get (index new) id))]
-    [:section.form
+    [:section.form {:data-file path :data-form (str/join " " (remove nil? (map str id)))}
      [:h3 [:code (str/join " " (map str id))]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
       (when extraction [:span.tag.tag-ext (str "extracted from " (str/join " " (map str (:from extraction))))])
       (when note [:span.tag.tag-note note])]
      (when-not full?
-       [:ul.changes (map change-row changes)])
+       [:ul.changes (for [c changes :let [row (change-row c)] :when row]
+                      (if (seq (:path c)) (with-attrs row {:data-at (fmt-path (:path c))}) row))])
      (when extraction
        [:div.drift
         (when (seq (:renamed extraction))
@@ -131,8 +134,10 @@
 
 (defn page
   "Whole page for `prs`, each a report with `:num` and `:title`. `gh-url` is the
-  repository URL used for links, or nil for a page without GitHub links."
-  [gh-url repo-name prs]
+  repository URL used for links, or nil for a page without GitHub links.
+  `extra-head` and `extra-body` are hiccup appended to head and body, which is
+  how the local review server adds its review panel."
+  [gh-url repo-name prs & {:keys [extra-head extra-body]}]
   (str "<!doctype html>"
        (hc/html
         [:html {:lang "en"}
@@ -142,7 +147,8 @@
           [:title (str "Structural review — " repo-name)]
           [:link {:rel "preconnect" :href "https://fonts.googleapis.com"}]
           [:link {:rel "stylesheet" :href "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"}]
-          [:style (hc/raw css)]]
+          [:style (hc/raw css)]
+          extra-head]
          [:body
           [:div.wrap
            [:div.intro
@@ -150,4 +156,5 @@
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
              ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]]
            [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
-           (map (partial pr-view gh-url) prs)]]])))
+           (map (partial pr-view gh-url) prs)]
+          extra-body]])))

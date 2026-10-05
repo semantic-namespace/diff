@@ -67,3 +67,14 @@
      :clj files :renames renames
      :other (vec (for [{:keys [filename] st :status} pr-fs :when (not (core/clj? filename))]
                    {:status (status st "M") :path filename}))}))
+
+(defonce ^:private cache (atom {}))
+
+(defn cached-report
+  "`report` for a PR reference, fetched once per head commit, so a draft and the
+  post that follows it anchor notes to the same lines."
+  [pr-ref]
+  (let [info (pr-info (if (map? pr-ref) pr-ref (parse-pr pr-ref)))
+        k [(:repo info) (:num info) (:head info)]]
+    (or (@cache k)
+        (let [r (report info)] (swap! cache assoc k r) r))))

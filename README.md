@@ -67,6 +67,20 @@ As a library, `sdiff.core/file-report` takes a path and two source strings,
 `sdiff.git/report` takes a repo and two refs, `sdiff.edn/report->edn` makes the
 result plain data.
 
+## Local review UI
+
+```
+bb sdiff serve [port]      # http://127.0.0.1:7878/
+```
+
+Open a pull request by reference or URL. The page is the HTML report with a
+`+ note` button on every changed form and change path, and a review panel:
+verdict, summary, notes, a preview that shows where each note lands and the
+exact payload, and a post button that asks before sending. It posts through
+`gh` as you. The server listens on 127.0.0.1 only, and every write needs a
+token printed into the page, so other sites in the browser can't use it.
+Unsent notes are kept in the browser per PR head commit.
+
 ## MCP server
 
 The same three operations as MCP tools, over stdio, on the JVM (plumcp does
