@@ -304,7 +304,7 @@
   `:comments-only` or `:whitespace-only` (`:rename-only` is assigned later by
   `rollup-renames`, which needs the whole change set).
 
-  An extraction is detected when a replaced expression calls, or passes as a
+  An extraction is detected when a replaced or reshaped expression calls, or passes as a
   value, a function new in this file whose body shares a subtree with the old
   expression, verbatim or modulo renamed locals. A form whose only changes are
   in its argument vector is tagged signature-only."
@@ -320,7 +320,7 @@
                      :else {:id id :changes [{:op :added-form :new b}]}))
         extractions (for [{:keys [id changes]} base
                           {:keys [op old new path]} changes
-                          :let [fname (when (and (= op :replaced) new) (first (filter added (tokens new))))
+                          :let [fname (when (and (#{:replaced :reshaped} op) new) (first (filter added (tokens new))))
                                 f (when fname (added fname))]
                           :when f
                           :let [body (arity-body f (if (= (head new) fname) (dec (count (kids new))) -1))
@@ -338,7 +338,7 @@
         extractions (vals (into {} (map (juxt :fn identity) extractions)))
         ext-by-fn (into {} (map (juxt :fn identity) extractions))
         base (map (fn [{:keys [changes] :as r}]
-                    (assoc r :changes (mapv (fn [c] (if-let [e (and (= :replaced (:op c)) (:new c)
+                    (assoc r :changes (mapv (fn [c] (if-let [e (and (#{:replaced :reshaped} (:op c)) (:new c)
                                                                     (some ext-by-fn (tokens (:new c))))]
                                                       (assoc c :extracted (:fn e) :kept (into (vec (:kept c)) (:kept e))) c)) changes)))
                   base)

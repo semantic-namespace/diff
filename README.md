@@ -4,10 +4,14 @@ Structural review of Clojure changes. Instead of lines, a change is named by the
 form it lives in:
 
 ```
-■ src/malli/error.cljc   [semantic]
-  defn ^:no-doc -resolve-root-error
-    ~ body › body › body › binding [path' m' p'] › let 1 restructured let → when-let;
-      kept: (when-let [m' (error-message {:schema schema} options)] …, [schema (mu/get-in schema path)]
+■ core/src/atlas/registry.cljc   [semantic]
+  defn compile!
+    ~ arity 1 › let 2 › binding dev-id-conflicts  [extracted → dev-id-conflicts]
+  defn dev-id-conflicts   ⇠ extracted from defn compile! › arity 1 › let 2 › binding dev-id-conflicts
+    + new form
+      drift: replaced keep 3 › fn › body › body › test  - (next cids)  + (and dev-id (some …
+      drift: replaced keep 3 › fn › body › body › body 1 › key :winner  - (last cids)  + (conj …
+      drift: added sort-by 4  + (sort-by str)
 ```
 
 Each file gets one verdict: `semantic`, `rename-only`, `comments-only` or
@@ -45,9 +49,12 @@ result plain data.
 bb test
 ```
 
-The fixtures are the changed files of three merged
-[metosin/malli](https://github.com/metosin/malli) pull requests at merge base
-and head (`test/fixtures/malli.refs`).
+The fixtures are the changed Clojure files of three merged
+[semantic-namespace/atlas](https://github.com/semantic-namespace/atlas) pull
+requests at merge base and head (`test/fixtures/atlas.refs`): #7 for an
+extraction with drift, #4 for a move into a binding and a dropped reader
+conditional, #2 for renames rolled up across files. Behaviours no atlas PR
+exercises yet are covered by small inline sources in the test.
 
 ## Scope
 

@@ -60,7 +60,8 @@
       :removed  [:li.chg.chg-sem [:span.p p] [:code.del (short (n/string old))] mv]
       :dropped  [:li.chg.chg-sem [:span.p "around the extracted part, not carried into the new function"]
                  [:code.del (short (n/string old))]]
-      :reshaped [:li.chg.chg-sem [:span.p p [:em.reshape (str " restructured " (or (head old) (name (n/tag old))) " → " (or (head new) (name (n/tag new))))]]
+      :reshaped [:li.chg.chg-sem [:span.p p [:em.reshape (str " restructured " (or (head old) (name (n/tag old))) " → " (or (head new) (name (n/tag new))))]
+                                 (when extracted [:em.ext (str " extracted → " extracted)])]
                  [:code.del (short (n/string old))] [:code.add (short (n/string new))]
                  [:span.what "kept as-is: " (kept-codes kept)]]
       :replaced (if rename

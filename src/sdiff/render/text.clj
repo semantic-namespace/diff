@@ -23,7 +23,8 @@
                                       (when-let [f (:moved-from c)] (str "\n        ⇠ holds " (kept-list (:kept c)) " from " (fmt-path f))))
                    :removed      (str "    - " p "= " (short (n/string old)))
                    :reshaped     (str "    ~ " p "restructured " (or (head old) (name (n/tag old))) " → " (or (head new) (name (n/tag new)))
-                                      "; kept: " (kept-list (:kept c)))
+                                      "; kept: " (kept-list (:kept c))
+                                      (when extracted (str " [extracted → " extracted "]")))
                    :replaced     (if rename
                                    (str "    ≈ " p "(rename)")
                                    (str "    ~ " p (when extracted (str " [extracted → " extracted "]"))
