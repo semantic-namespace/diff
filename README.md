@@ -76,12 +76,19 @@ bb sdiff serve [port]      # http://127.0.0.1:7878/
 ```
 
 Open a pull request by reference or URL. The page is the HTML report with a
-`+ note` button on every changed form and change path, and a review panel:
+💬 button on every changed form and change path, and a review panel:
 verdict, summary, notes, a preview that shows where each note lands and the
 exact payload, and a post button that asks before sending. It posts through
 `gh` as you. The server listens on 127.0.0.1 only, and every write needs a
 token printed into the page, so other sites in the browser can't use it.
-Unsent notes are kept in the browser per PR head commit.
+Each changed form has its own Viewed tick, kept on this machine. A form you
+marked viewed shows "changed" when a later push changes its code, and keeps its
+mark through a rename. Viewed state, unsent notes and settings live in
+`~/.local/state/sdiff/` (`SDIFF_STATE_DIR` overrides it), so they follow you
+across browsers. Settings, in the review panel: fold forms you mark viewed,
+fold files viewed on GitHub, mark a file viewed on GitHub once all its forms
+are viewed (off by default, it writes as you), and fold files that only change
+formatting, comments or names.
 
 `bb sdiff serve 7878 --host <address>` serves on another interface, such as a
 VPN address. Anyone who can reach that address can then read PRs and post

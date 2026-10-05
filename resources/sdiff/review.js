@@ -1,10 +1,18 @@
-(() => {
+(async () => {
   const cfg = JSON.parse(document.getElementById('sdiff-config').textContent);
-  const key = 'sdiff:' + cfg.ref + ':' + cfg.head;
-  const load = () => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch (e) { return {}; } };
-  const state = Object.assign({ notes: [], verdict: 'comment', summary: '' }, load());
+  const remote = await fetch('/state?ref=' + encodeURIComponent(cfg.ref)).then(r => r.json()).catch(() => ({}));
+  const settings = Object.assign({ 'fold-viewed-forms': true, 'fold-viewed-files': true, 'mark-file-on-github': false, 'fold-cosmetic-files': false }, remote.settings);
+  const state = Object.assign({ forms: {}, notes: [], verdict: 'comment', summary: '' }, remote.review);
+  const legacyKey = 'sdiff:' + cfg.ref + ':' + cfg.head;
+  try {
+    const old = JSON.parse(localStorage.getItem(legacyKey) || 'null');
+    if (old && old.notes && old.notes.length && !state.notes.length) Object.assign(state, { notes: old.notes, verdict: old.verdict || state.verdict, summary: old.summary || state.summary });
+    localStorage.removeItem(legacyKey);
+  } catch (e) {}
   let previewed = null;
-  const save = () => { try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) {} };
+  let saveTimer = null;
+  const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sdiff-Token': cfg.token }, body: JSON.stringify(body) });
+  const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => post('/state', { pr: cfg.ref, review: state }).catch(() => {}), 300); };
   const el = (tag, attrs = {}, ...kids) => {
     const e = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) k === 'class' ? e.className = v : k.startsWith('on') ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v);
@@ -63,23 +71,23 @@
   }));
 
   const viewedBoxes = {};
+  async function setGithubViewed(path, want) {
+    const v = viewedBoxes[path]; if (!v) return;
+    v.label.classList.add('sd-busy');
+    try {
+      const res = await post('/viewed', { pr: cfg.ref, path, viewed: want });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setViewed(path, data.state);
+      if (want && v.onView && settings['fold-viewed-files']) v.onView();
+    } catch (e) { v.cb.checked = !want; alert('GitHub did not accept the change: ' + e.message); }
+    v.label.classList.remove('sd-busy');
+  }
   function viewedBox(path, onView) {
     const cb = el('input', { type: 'checkbox' });
     const label = el('label', { class: 'sd-viewed', title: 'Viewed on GitHub' }, cb, ' Viewed');
     label.addEventListener('click', e => e.stopPropagation());
-    cb.addEventListener('change', async () => {
-      const want = cb.checked;
-      label.classList.add('sd-busy');
-      try {
-        const res = await fetch('/viewed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sdiff-Token': cfg.token },
-          body: JSON.stringify({ pr: cfg.ref, path, viewed: want }) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        setViewed(path, data.state);
-        if (want && onView) onView();
-      } catch (e) { cb.checked = !want; alert('GitHub did not accept the change: ' + e.message); }
-      label.classList.remove('sd-busy');
-    });
+    cb.addEventListener('change', () => setGithubViewed(path, cb.checked));
     viewedBoxes[path] = { cb, label, onView };
     return label;
   }
@@ -97,9 +105,51 @@
   fetch('/viewed?ref=' + encodeURIComponent(cfg.ref)).then(r => r.json()).then(states => {
     for (const [path, state] of Object.entries(states)) {
       setViewed(path, state);
-      if (state === 'VIEWED') { const a = document.querySelector('article.file[data-file="' + CSS.escape(path) + '"]'); if (a) a.classList.add('sd-folded'); }
+      if (state === 'VIEWED' && settings['fold-viewed-files']) { const a = document.querySelector('article.file[data-file="' + CSS.escape(path) + '"]'); if (a) a.classList.add('sd-folded'); }
     }
   }).catch(() => {});
+
+  const formBoxes = {};
+  const formStatus = k => {
+    const info = cfg.forms[k]; if (!info) return 'none';
+    const stored = k in state.forms ? state.forms[k] : (info.was ? state.forms[info.was] : undefined);
+    return stored === undefined ? 'unviewed' : stored === info.fp ? 'viewed' : 'changed';
+  };
+  function renderForm(k) {
+    const b = formBoxes[k], st = formStatus(k);
+    b.cb.checked = st === 'viewed';
+    b.label.classList.toggle('sd-dismissed', st === 'changed');
+    b.label.title = st === 'changed' ? 'The code changed since you marked this form viewed' : 'Viewed (kept on this machine)';
+  }
+  function fileComplete(file) {
+    const ks = Object.keys(formBoxes).filter(k => formBoxes[k].file === file);
+    if (!settings['mark-file-on-github'] || !ks.length || !ks.every(k => formStatus(k) === 'viewed')) return;
+    const v = viewedBoxes[file];
+    if (v && !v.cb.checked) { v.cb.checked = true; setGithubViewed(file, true); }
+  }
+  allOf('section.form[data-form]').forEach(sec => {
+    const k = sec.dataset.file + '|' + sec.dataset.form;
+    if (!cfg.forms[k]) return;
+    const cb = el('input', { type: 'checkbox' });
+    const label = el('label', { class: 'sd-viewed sd-form-viewed' }, cb, ' Viewed');
+    label.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const info = cfg.forms[k];
+      if (cb.checked) { state.forms[k] = info.fp; if (info.was) delete state.forms[info.was]; }
+      else { delete state.forms[k]; if (info.was) delete state.forms[info.was]; }
+      renderForm(k); save(); render();
+      if (cb.checked && settings['fold-viewed-forms']) sec.classList.add('sd-folded');
+      if (cb.checked) fileComplete(sec.dataset.file);
+    });
+    sec.querySelector(':scope > h3').append(label);
+    formBoxes[k] = { cb, label, sec, file: sec.dataset.file };
+    renderForm(k);
+  });
+  function applyFolds() {
+    if (settings['fold-viewed-forms']) Object.entries(formBoxes).forEach(([k, b]) => { if (formStatus(k) === 'viewed') b.sec.classList.add('sd-folded'); });
+    if (settings['fold-cosmetic-files']) allOf('article.file.comments-only, article.file.whitespace-only, article.file.rename-only').forEach(a => a.classList.add('sd-folded'));
+  }
+  applyFolds();
 
   const verdict = el('select', { onchange: e => { state.verdict = e.target.value; changed(); } },
     ...['comment', 'approve', 'request-changes'].map(v => el('option', { value: v }, v.replace('-', ' '))));
@@ -116,23 +166,39 @@
       cfg.author ? el('p', { class: 'sd-hint' }, 'Author: ' + cfg.author + '. GitHub only allows a comment review on your own pull request.') : null,
       el('p', { class: 'sd-hint' }, 'Click a file or form heading to fold it. Alt+click folds or unfolds every one at that level, and Alt+click on a source toggle opens or closes them all.'),
       el('label', {}, 'Verdict ', verdict), summary, list,
+      el('details', { class: 'sd-settings' }, el('summary', {}, 'Settings'),
+        ...[['fold-viewed-forms', 'Fold forms I mark viewed'],
+            ['fold-viewed-files', 'Fold files viewed on GitHub'],
+            ['mark-file-on-github', 'Mark a file viewed on GitHub when all its forms are viewed'],
+            ['fold-cosmetic-files', 'Fold files that only change formatting, comments or names']].map(([k, label]) => {
+          const cb = el('input', { type: 'checkbox' });
+          cb.checked = !!settings[k];
+          cb.addEventListener('change', () => {
+            settings[k] = cb.checked;
+            post('/settings', { settings }).catch(() => {});
+            applyFolds();
+          });
+          return el('label', {}, cb, ' ' + label);
+        })),
       el('div', { class: 'sd-row' },
         el('button', { type: 'button', onclick: preview }, 'Preview'), postBtn),
       out));
   document.body.append(panel);
-  postBtn.addEventListener('click', post);
+  postBtn.addEventListener('click', postReview);
 
   function changed() { previewed = null; postBtn.disabled = true; out.textContent = ''; save(); render(); }
 
   function render() {
-    count.textContent = state.notes.length + (state.notes.length === 1 ? ' note' : ' notes');
+    const ks = Object.keys(formBoxes);
+    count.textContent = state.notes.length + (state.notes.length === 1 ? ' note' : ' notes') +
+      (ks.length ? ' · ' + ks.filter(k => formStatus(k) === 'viewed').length + '/' + ks.length + ' forms viewed' : '');
     list.replaceChildren(...state.notes.map((n, i) => el('li', {},
       el('code', {}, n.file.split('/').pop() + ' · ' + where(n)), el('div', {}, n.body),
       el('button', { type: 'button', class: 'sd-quiet', onclick: () => { state.notes.splice(i, 1); changed(); } }, 'remove'))));
   }
 
   async function call(path, body) {
-    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sdiff-Token': cfg.token }, body: JSON.stringify(body) });
+    const res = await post(path, body);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
@@ -155,7 +221,7 @@
     } catch (e) { out.textContent = 'Draft failed: ' + e.message; }
   }
 
-  async function post() {
+  async function postReview() {
     if (previewed !== JSON.stringify(request())) { out.textContent = 'The review changed since the preview. Preview again.'; return; }
     if (!confirm('Post a ' + state.verdict.replace('-', ' ') + ' review with ' + state.notes.length + ' notes to ' + cfg.ref + ' as your GitHub user?')) return;
     postBtn.disabled = true;

@@ -9,13 +9,16 @@
   other than loopback, anyone who can reach it can read pull requests and post
   reviews as the user running the server."
   (:require [cheshire.core :as json]
+            [rewrite-clj.node]
+            [sdiff.core]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [hiccup2.core :as hc]
             [org.httpkit.server :as http]
             [sdiff.github :as github]
             [sdiff.render.html :as html]
-            [sdiff.review :as review]))
+            [sdiff.review :as review]
+            [sdiff.state :as state]))
 
 (def token (str (random-uuid)))
 
@@ -46,11 +49,24 @@
             [:input {:name "ref" :placeholder "owner/repo#123 or https://github.com/owner/repo/pull/123" :required true :autofocus true}]
             [:button {:type "submit"} "Open"]]]]])))
 
+(defn form-key [file id] (str file "|" (str/join " " (remove nil? (map str id)))))
+
+(defn- fingerprint
+  "Changes when the form's code changes, not when lines move around it."
+  [{:keys [old new]} {:keys [id was changes]}]
+  (let [src (fn [s k] (some-> (get (sdiff.core/index s) k) rewrite-clj.node/string (str/replace #"\s+" " ")))]
+    (str (hash [(src old (or was id)) (src new id) (count changes)]))))
+
+(defn- form-index [r]
+  (into {} (for [f (:clj r) fm (:forms f)]
+             [(form-key (:path f) (:id fm))
+              {:fp (fingerprint f fm) :was (when (:was fm) (form-key (:path f) (:was fm)))}])))
+
 (defn- pr-page [ref]
   (let [r (github/cached-report ref)
         {:keys [repo num url author]} (:pr r)
         config {:ref (str repo "#" num) :repo repo :num num :url url :author author
-                :head (:head r) :token token}]
+                :head (:head r) :token token :forms (form-index r)}]
     (html/page (str "https://github.com/" repo) repo [r]
                :extra-head [:style (hc/raw (resource "review.css"))]
                :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
@@ -81,6 +97,24 @@
         (json-response 200 {:path path :state (github/set-viewed! pr-id path (boolean viewed))}))
       (catch Exception e (json-response 400 {:error (ex-message e)})))))
 
+(defn- authorized [req f]
+  (if (not= token (get-in req [:headers "x-sdiff-token"]))
+    (json-response 403 {:error "missing or wrong token; reload the page"})
+    (try (f (json/parse-string (slurp (:body req)) true))
+         (catch Exception e (json-response 400 {:error (ex-message e)})))))
+
+(defn- state-get [req]
+  (let [{:keys [repo num]} (github/parse-pr (query-param req "ref"))]
+    (json-response 200 {:settings (state/settings) :review (state/review repo num)})))
+
+(defn- state-post [req]
+  (authorized req (fn [{:keys [pr review]}]
+                    (let [{:keys [repo num]} (github/parse-pr pr)]
+                      (json-response 200 (state/save-review! repo num (update review :forms #(update-keys % (fn [k] (subs (str k) 1))))))))))
+
+(defn- settings-post [req]
+  (authorized req (fn [{:keys [settings]}] (json-response 200 (state/save-settings! settings)))))
+
 (defn handler [{:keys [request-method uri] :as req}]
   (try
     (case [request-method uri]
@@ -91,6 +125,9 @@
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
       [:post "/viewed"] (viewed-call req)
+      [:get "/state"]  (state-get req)
+      [:post "/state"] (state-post req)
+      [:post "/settings"] (settings-post req)
       [:post "/draft"] (review-call req false)
       [:post "/post"]  (review-call req true)
       {:status 404 :body "not found"})

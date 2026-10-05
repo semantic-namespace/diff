@@ -40,3 +40,7 @@ article.file.sd-folded{padding-bottom:.6rem}
 .sd-viewed.sd-dismissed::after{content:'changed'}
 .sd-viewed.sd-busy{opacity:.5}
 details.other li{display:flex;gap:.6rem;align-items:center}
+.form h3 .sd-form-viewed{order:100}
+.sd-settings{font-size:.85rem}
+.sd-settings label{display:flex;gap:.4rem;align-items:flex-start;margin:.3rem 0;color:var(--ink)}
+.sd-settings label input{margin-top:.2rem}
