@@ -69,3 +69,15 @@ table.contract tr.del td{background:var(--del-bg);text-decoration:line-through}
 ul.ids{margin:0;padding-left:1.1rem}
 .mute{color:var(--mute)}
 .sd-hide-inferred .deco.inferred{display:none}
+.view-head h1{font-size:1.5rem;font-weight:600;margin:0 0 .2rem}
+.view-head .intro{max-width:70ch;font-size:1.05rem}
+.view-section{margin:2.2rem 0}
+.view-section h2{display:flex;align-items:baseline;gap:.6rem;font-size:1.2rem;font-weight:600;margin:0 0 .3rem}
+.view-section h2 .n{display:inline-flex;align-items:center;justify-content:center;min-width:1.7em;height:1.7em;border-radius:999px;background:var(--ext);color:var(--panel);font-size:.85rem}
+.claim.inferred-claim{max-width:72ch;border-left:4px solid var(--ext);background:var(--ext-bg);padding:.4rem .7rem;border-radius:4px;margin:0 0 .8rem}
+.view-item{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.6rem 1rem;margin:0 0 .8rem}
+.view-item .where{color:var(--mute);font-size:.85rem}
+.view-item .form{border-top:0;padding-top:0;margin-top:.2rem}
+.view-entity h4{margin:0 0 .3rem;font-size:1rem;font-weight:500}
+details.everything-else{margin-top:2.5rem}
+details.everything-else>summary{font-size:1rem;color:var(--mute);cursor:pointer;margin-bottom:.8rem}

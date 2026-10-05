@@ -107,7 +107,7 @@
 (def verdict-label {:semantic "changes behaviour" :rename-only "rename only" :comments-only "comments only" :whitespace-only "formatting only"})
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
 
-(defn- file-view [gh-url pr-num {:keys [path verdict forms status moved] :as fr}]
+(defn file-view [gh-url pr-num {:keys [path verdict forms status moved] :as fr}]
   [:article.file {:class (name verdict) :id (str "f-" (hash path)) :data-file path}
    [:h2 [:span.verdict (verdict-label verdict)]
     [:code.path path]
@@ -146,8 +146,9 @@
   "Whole page for `prs`, each a report with `:num` and `:title`. `gh-url` is the
   repository URL used for links, or nil for a page without GitHub links.
   `extra-head` and `extra-body` are hiccup appended to head and body, which is
-  how the local review server adds its review panel."
-  [gh-url repo-name prs & {:keys [extra-head extra-body]}]
+  how the local review server adds its review panel. `body` replaces the
+  per-PR content, which is how a view renders over the same page."
+  [gh-url repo-name prs & {:keys [extra-head extra-body body]}]
   (str "<!doctype html>"
        (hc/html
         [:html {:lang "en"}
@@ -166,6 +167,7 @@
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
              ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]
             [:p.legend [:span.prov.legend-derived "derived"] " comes from a tool, named on the label. " [:span.prov.legend-inferred "inferred"] " is a reviewer's or a model's reading of it, with the derived facts it rests on."]]
-           [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
-           (map (partial pr-view gh-url) prs)]
+           (or body
+               (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
+                     (map (partial pr-view gh-url) prs)))]
           extra-body]])))

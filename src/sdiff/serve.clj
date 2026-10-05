@@ -21,6 +21,7 @@
             [sdiff.render.text :as text]
             [sdiff.review :as review]
             [sdiff.decorate :as decorate]
+            [sdiff.view :as view]
             [sdiff.state :as state]))
 
 (def token (str (random-uuid)))
@@ -90,16 +91,32 @@
       (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n\n"
            (with-out-str (text/print-report r))))))
 
-(defn- pr-page [ref]
+(defn- pr-page [ref view-name]
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         config (page-config r)
-        ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
+        review (state/review repo num)
+        ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
+        v (when view-name (get (:views review) view-name))]
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
+                 :body (cond v (view/render r v)
+                             view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))])
                  :extra-head [:style (hc/raw (resource "review.css"))]
                  :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
                                    [:script (hc/raw (resource "review.js"))])))))
+
+(defn- view-post [req]
+  (authorized req (fn [{:keys [pr name view]}]
+                    (let [{:keys [repo num]} (github/parse-pr pr)
+                          r (github/cached-report pr)
+                          v (if (string? view) (clojure.edn/read-string view) view)
+                          ctx (@decorate/context-fn r)
+                          problems (view/validate ctx v)
+                          views (assoc (:views (state/review repo num)) name v)]
+                      (state/save-review! repo num {:views views})
+                      (json-response 200 {:url (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8") "&view=" (java.net.URLEncoder/encode name "UTF-8"))
+                                          :problems problems :views (keys views)})))))
 
 (defn- annotate-post [req]
   (authorized req (fn [{:keys [pr annotations]}]
@@ -155,12 +172,13 @@
       [:get "/pr"]     (if-let [ref (query-param req "ref")]
                          (if (= "text" (query-param req "format"))
                            {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref)}
-                           (html-response (pr-page ref)))
+                           (html-response (pr-page ref (query-param req "view"))))
                          {:status 302 :headers {"Location" "/"}})
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
       [:post "/viewed"] (viewed-call req)
       [:post "/annotate"] (annotate-post req)
+      [:post "/view"] (view-post req)
       [:get "/state"]  (state-get req)
       [:post "/state"] (state-post req)
       [:post "/settings"] (settings-post req)

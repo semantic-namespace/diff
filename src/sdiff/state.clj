@@ -37,7 +37,7 @@
   (let [[owner name] (str/split repo #"/")]
     (io/file (dir) "reviews" owner name (str num ".edn"))))
 
-(def empty-review {:forms {} :notes [] :verdict "comment" :summary "" :annotations []})
+(def empty-review {:forms {} :notes [] :verdict "comment" :summary "" :annotations [] :views {}})
 
 (defn review [repo num] (read-edn (review-file repo num) empty-review))
 

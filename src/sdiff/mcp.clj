@@ -135,6 +135,32 @@
                              (str/join "\n" (for [{:keys [on problem]} (:problems res)] (str "  " (pr-str on) ": " problem))))
                         "\n\nall annotations resolved")))))
 
+(defn ^{:mcp-type :tool
+        :mcp-annotations (eg/make-tool-annotations :title "Compose a view" :read-only-hint? false :destructive-hint? false :idempotent-hint? true)}
+  view
+  "Compose a view of a pull request's review page: the sections a reader should
+  see first, in order, under headings with a claim each; everything else stays
+  on the page, folded. `view` is EDN:
+  {:title \"Safe to merge?\" :intro \"…\" :author \"claude\"
+   :sections [{:title \"…\" :claim \"…\" :items [[:form \"path\" \"defn x\"] [:entity :fn.x/y] [:file \"path\"]]}]}
+  Items name what the decorated report already shows. Returns the view's URL and
+  every item that does not resolve. A PR can hold several named views."
+  [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
+           ^{:doc "View name, used in the URL (e.g. safe-to-merge)" :type "string"} name
+           ^{:doc "The view, as EDN" :type "string"} view]}]
+  (let [{:keys [url token]} (ui-server)
+        {:keys [status body]} (http/post (str url "view")
+                                         {:headers {"content-type" "application/json" "x-sdiff-token" token}
+                                          :body (json/generate-string {:pr pr :name name :view view})
+                                          :throw false})
+        res (json/parse-string body true)]
+    (when (not= 200 status) (throw (ex-info (str "review server: " (or (:error res) status)) {})))
+    (text-result (str url (subs (:url res) 1)
+                      (if (seq (:problems res))
+                        (str "\n\n" (count (:problems res)) " item(s) do not resolve:\n"
+                             (str/join "\n" (for [{:keys [section item problem]} (:problems res)] (str "  section " section " " (pr-str item) ": " problem))))
+                        "\n\nall items resolved")))))
+
 (defn ^{:mcp-type :prompt :mcp-name "review"} review-prompt
   "Review a pull request from its structural report: derived facts first, inferred notes marked, then a GitHub review."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr]}]
@@ -147,7 +173,8 @@
           "2. Read the whole report before judging. Start from the registry header, then the forms whose verdict is semantic. Formatting, comments and rename-only files need no reading.\n"
           "3. Where a claim needs code the report does not show (an unchanged helper a change relies on), read that code and say so in the claim's basis.\n"
           "4. Call annotate with your readings: one per form or entity, each with `basis` naming the derived facts or code it rests on, plus one `page` annotation with the overall reading. Fix any target it reports as unresolved.\n"
-          "5. Call review-draft with the verdict and the notes worth sending to the author, and show the result. Call post-review only when the user agrees."))]
+          "5. Compose a view for the question the user is asking (safe to merge? what changes for my service?): call view with the sections a reader should see first, each with a claim, naming forms and entities from the report. Share the view's URL and the full page's URL beside it.\n"
+          "6. Call review-draft with the verdict and the notes worth sending to the author, and show the result. Call post-review only when the user agrees."))]
    {}))
 
 (def instructions
@@ -162,6 +189,6 @@
   (ms/run-mcp-server {:traffic-logger (if (System/getenv "SDIFF_MCP_DEBUG") stl/compact-server-traffic-logger stl/nop-traffic-logger)
                       :info (es/make-info "sdiff" "0.1.0" "Structural review of Clojure pull requests")
                       :instructions instructions
-                      :vars [#'structural-diff #'review-draft #'post-review #'annotate #'review-prompt]
+                      :vars [#'structural-diff #'review-draft #'post-review #'annotate #'view #'review-prompt]
                       :transport :stdio
                       :print-banner? false}))

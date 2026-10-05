@@ -16,12 +16,14 @@
 (defonce form-decorators (atom []))
 (defonce header-decorators (atom []))
 (defonce ref-validators (atom []))
+(defonce entity-renderers (atom []))
 
 (defn- put [coll k f] (conj (vec (remove #(= k (first %)) coll)) [k f]))
 
 (defn add-form-decorator! "`(fn [ctx file form] hiccup-or-nil)`" [k f] (swap! form-decorators put k f))
 (defn add-header-decorator! "`(fn [ctx report] hiccup-or-nil)`" [k f] (swap! header-decorators put k f))
 (defn add-ref-validator! "`(fn [ctx on] problem-string-or-nil)`" [k f] (swap! ref-validators put k f))
+(defn add-entity-renderer! "`(fn [ctx id] hiccup-or-nil)`, the derived view of one entity for a view item" [k f] (swap! entity-renderers put k f))
 
 (defn form-id [form] (str/join " " (remove nil? (map str (:id form)))))
 
@@ -55,6 +57,12 @@
    [:span.prov (or kind "inferred") " · " (or author "unknown")]
    [:p (code-spans text)]
    (when (seq basis) [:p.basis "based on " (interpose ", " (for [b basis] [:code (str b)]))])])
+
+(defn entity-section [id]
+  (let [parts (keep (fn [[_ f]] (guarded f *ctx* id)) @entity-renderers)]
+    (if (seq parts)
+      (list parts (map render-annotation (annotations-on *ctx* {:entity id})))
+      (problem "no renderer for entities on this server"))))
 
 (defn form-annotations [file form]
   (map render-annotation (annotations-on *ctx* {:file (:path file) :form (form-id form)})))
