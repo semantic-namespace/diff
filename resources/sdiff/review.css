@@ -81,3 +81,6 @@ ul.ids{margin:0;padding-left:1.1rem}
 .view-entity h4{margin:0 0 .3rem;font-size:1rem;font-weight:500}
 details.everything-else{margin-top:2.5rem}
 details.everything-else>summary{font-size:1rem;color:var(--mute);cursor:pointer;margin-bottom:.8rem}
+details.legend{margin:.4rem 0 1rem;font-size:.85rem;color:var(--mute)}
+table.legend-table{border-collapse:collapse;margin:.3rem 0}
+table.legend-table td{padding:.1rem .8rem .1rem 0}

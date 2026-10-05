@@ -21,6 +21,7 @@
             [sdiff.render.text :as text]
             [sdiff.review :as review]
             [sdiff.decorate :as decorate]
+            [sdiff.names :as names]
             [sdiff.view :as view]
             [sdiff.state :as state]))
 
@@ -83,13 +84,22 @@
   (let [{:keys [repo num url author]} (:pr r)]
     {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
 
+(defonce ^:private names-cache (atom {}))
+
+(defn- names-of [r]
+  (let [k [(get-in r [:pr :repo]) (:num r) (:head r)]]
+    (or (@names-cache k) (let [t (names/table r)] (swap! names-cache assoc k t) t))))
+
 (defn- pr-text [ref]
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
     (binding [decorate/*ctx* ctx]
-      (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n\n"
-           (with-out-str (text/print-report r))))))
+      (let [body (with-out-str (text/print-report r))
+            used (names/used (names-of r) body)]
+        (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n"
+             (names/legend-text used) "\n"
+             (names/shorten-text used body))))))
 
 (defn- pr-page [ref view-name]
   (let [r (github/cached-report ref)
@@ -100,6 +110,7 @@
         v (when view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name))))]
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
+                 :names (names-of r)
                  :body (cond v (view/render r v)
                              view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))])
                  :extra-head [:style (hc/raw (resource "review.css"))]
