@@ -102,7 +102,7 @@
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
 
 (defn- file-view [gh-url pr-num {:keys [path verdict forms status] :as fr}]
-  [:article.file {:class (name verdict) :id (str "f-" (hash path))}
+  [:article.file {:class (name verdict) :id (str "f-" (hash path)) :data-file path}
    [:h2 [:span.verdict (verdict-label verdict)]
     [:code.path path]
     (case status "A" [:span.tag.tag-add "new file"] "D" [:span.tag.tag-del "deleted"] nil)
@@ -128,7 +128,7 @@
      (map (partial file-view gh-url num) (sort-by (comp verdict-order :verdict) clj))
      (when (seq other)
        [:details.other [:summary (str (count other) " non-Clojure files" (when gh-url ", shown by GitHub"))]
-        [:ul (for [{:keys [path]} other] [:li (if gh-url [:a {:href (str gh-url "/pull/" num "/files") :target "_blank"} path] path)])]])]))
+        [:ul (for [{:keys [path]} other] [:li {:data-file path} (if gh-url [:a {:href (str gh-url "/pull/" num "/files") :target "_blank"} path] path)])]])]))
 
 (def css (slurp (clojure.java.io/resource "sdiff/report.css")))
 

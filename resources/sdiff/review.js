@@ -62,6 +62,45 @@
     allOf('details').forEach(d => { d.open = open; });
   }));
 
+  const viewedBoxes = {};
+  function viewedBox(path, onView) {
+    const cb = el('input', { type: 'checkbox' });
+    const label = el('label', { class: 'sd-viewed', title: 'Viewed on GitHub' }, cb, ' Viewed');
+    label.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', async () => {
+      const want = cb.checked;
+      label.classList.add('sd-busy');
+      try {
+        const res = await fetch('/viewed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sdiff-Token': cfg.token },
+          body: JSON.stringify({ pr: cfg.ref, path, viewed: want }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setViewed(path, data.state);
+        if (want && onView) onView();
+      } catch (e) { cb.checked = !want; alert('GitHub did not accept the change: ' + e.message); }
+      label.classList.remove('sd-busy');
+    });
+    viewedBoxes[path] = { cb, label, onView };
+    return label;
+  }
+  function setViewed(path, state) {
+    const v = viewedBoxes[path]; if (!v) return;
+    v.cb.checked = state === 'VIEWED';
+    v.label.classList.toggle('sd-dismissed', state === 'DISMISSED');
+    v.label.title = state === 'DISMISSED' ? 'Changed since you marked it viewed' : 'Viewed on GitHub';
+  }
+  allOf('article.file[data-file]').forEach(a => {
+    const h2 = a.querySelector(':scope > h2');
+    if (h2) h2.append(viewedBox(a.dataset.file, () => a.classList.add('sd-folded')));
+  });
+  allOf('details.other li[data-file]').forEach(li => li.append(viewedBox(li.dataset.file)));
+  fetch('/viewed?ref=' + encodeURIComponent(cfg.ref)).then(r => r.json()).then(states => {
+    for (const [path, state] of Object.entries(states)) {
+      setViewed(path, state);
+      if (state === 'VIEWED') { const a = document.querySelector('article.file[data-file="' + CSS.escape(path) + '"]'); if (a) a.classList.add('sd-folded'); }
+    }
+  }).catch(() => {});
+
   const verdict = el('select', { onchange: e => { state.verdict = e.target.value; changed(); } },
     ...['comment', 'approve', 'request-changes'].map(v => el('option', { value: v }, v.replace('-', ' '))));
   verdict.value = state.verdict;

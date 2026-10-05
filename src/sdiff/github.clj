@@ -78,3 +78,28 @@
         k [(:repo info) (:num info) (:head info)]]
     (or (@cache k)
         (let [r (report info)] (swap! cache assoc k r) r))))
+
+(def ^:private viewed-query
+  "query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{path viewerViewedState}}}}}")
+
+(defn viewed
+  "The caller's per-file Viewed state on a PR, as GitHub keeps it:
+  `{:pr-id id :files {path \"VIEWED\"|\"UNVIEWED\"|\"DISMISSED\"}}`. DISMISSED means
+  the file changed after it was marked viewed."
+  [pr-ref]
+  (let [{:keys [repo num]} (if (map? pr-ref) pr-ref (parse-pr pr-ref))
+        [owner name] (str/split repo #"/")
+        out (gh ["api" "graphql" "--paginate" "-F" (str "owner=" owner) "-F" (str "name=" name) "-F" (str "number=" num)
+                 "-f" (str "query=" viewed-query)
+                 "--jq" ".data.repository.pullRequest | {id, files: .files.nodes}"])
+        pages (for [l (str/split-lines out) :when (not (str/blank? l))] (json/parse-string l true))]
+    {:pr-id (:id (first pages))
+     :files (into {} (for [p pages f (:files p)] [(:path f) (:viewerViewedState f)]))}))
+
+(defn set-viewed!
+  "Mark or unmark `path` as viewed on the PR with GraphQL node id `pr-id`, as the caller."
+  [pr-id path viewed?]
+  (let [m (if viewed? "markFileAsViewed" "unmarkFileAsViewed")]
+    (gh ["api" "graphql" "-f" (str "query=mutation($id:ID!,$path:String!){" m "(input:{pullRequestId:$id,path:$path}){clientMutationId}}")
+         "-f" (str "id=" pr-id) "-f" (str "path=" path)])
+    (if viewed? "VIEWED" "UNVIEWED")))

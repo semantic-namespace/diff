@@ -33,3 +33,10 @@ form.open{display:flex;gap:.5rem;max-width:40rem}
 .sd-folded>.sd-fold::before{transform:rotate(-90deg)}
 article.file.sd-folded>:not(h2),section.form.sd-folded>:not(h3){display:none}
 article.file.sd-folded{padding-bottom:.6rem}
+.sd-viewed{display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;color:var(--mute);border:1px solid var(--line);border-radius:4px;padding:.05rem .45rem;cursor:pointer;user-select:none}
+.file h2 .sd-viewed{order:100}
+.sd-viewed:has(input:checked){color:var(--add);background:var(--add-bg);border-color:transparent}
+.sd-viewed.sd-dismissed{color:var(--ext);border-color:var(--ext)}
+.sd-viewed.sd-dismissed::after{content:'changed'}
+.sd-viewed.sd-busy{opacity:.5}
+details.other li{display:flex;gap:.6rem;align-items:center}

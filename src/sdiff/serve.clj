@@ -72,6 +72,15 @@
             (json-response 200 {:state (:state res) :url (:html_url res) :placed placed}))))
       (catch Exception e (json-response 400 {:error (ex-message e)})))))
 
+(defn- viewed-call [req]
+  (if (not= token (get-in req [:headers "x-sdiff-token"]))
+    (json-response 403 {:error "missing or wrong token; reload the page"})
+    (try
+      (let [{:keys [pr path viewed]} (json/parse-string (slurp (:body req)) true)
+            {:keys [pr-id]} (github/viewed pr)]
+        (json-response 200 {:path path :state (github/set-viewed! pr-id path (boolean viewed))}))
+      (catch Exception e (json-response 400 {:error (ex-message e)})))))
+
 (defn handler [{:keys [request-method uri] :as req}]
   (try
     (case [request-method uri]
@@ -79,6 +88,9 @@
       [:get "/pr"]     (if-let [ref (query-param req "ref")]
                          (html-response (pr-page ref))
                          {:status 302 :headers {"Location" "/"}})
+      [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
+                            (catch Exception e (json-response 400 {:error (ex-message e)})))
+      [:post "/viewed"] (viewed-call req)
       [:post "/draft"] (review-call req false)
       [:post "/post"]  (review-call req true)
       {:status 404 :body "not found"})
