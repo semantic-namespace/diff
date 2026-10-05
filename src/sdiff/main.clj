@@ -9,7 +9,8 @@
     serve  [port] [--host addr]        review UI (default 127.0.0.1:7878)
 
   Local ranges are diffed from the merge base of base and head, which is what a
-  pull request shows. For a squash-merged commit C, use `C^ C`. `pr` and
+  pull request shows. A head of `.` is the working tree, uncommitted edits
+  included. For a squash-merged commit C, use `C^ C`. `pr` and
   `review` read GitHub through the gh CLI with your own credentials.
 
   notes.edn is `{:verdict :approve|:request-changes|:comment :summary \"…\"
