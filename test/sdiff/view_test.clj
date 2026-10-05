@@ -30,3 +30,17 @@
   (is (= [{:section 2 :item [:entity :fn/x] :problem "entity targets need a registry; this server has none"}
           {:section 2 :item [:form path "defn nope"] :problem (str "no changed form \"defn nope\" in " path)}]
          (view/validate {:report report} v))))
+
+(deftest the-other-item-kinds
+  (let [v2 {:title "t" :question "is it safe?"
+            :sections [{:title "one change" :items [[:change path "defn compile!" "arity 1 › let 2 › binding dev-id-conflicts"]]}
+                       {:title "ctx" :folded true :items [[:header] [:rename "a" "b"]]}]}
+        rep (assoc report :renames [{:from "a" :to "b" :count 2}])
+        html (binding [d/*ctx* {:report rep :annotations []}] (str (hiccup2.core/html (view/render rep v2))))]
+    (is (str/includes? html "answers: <em>is it safe?</em>"))
+    (is (= 1 (count (re-seq #"class=\"chg chg-sem\"" (subs html 0 (str/index-of html "Everything else"))))) "a :change item shows only that change; the form's other changes stay in the rest")
+    (is (str/includes? html "<details class=\"view-section\"") "a folded section is a closed details")
+    (is (str/includes? html "2 sites across the PR"))
+    (is (empty? (view/validate {:report rep} v2)))
+    (is (= "no change at \"nope\" in defn compile!" (:problem (first (view/validate {:report rep} {:sections [{:items [[:change path "defn compile!" "nope"]]}]})))))
+    (is (str/starts-with? (:problem (first (view/validate {:report rep} {:sections [{:items [[:rename "x" "y"]]}]}))) "no rename"))))

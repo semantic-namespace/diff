@@ -141,9 +141,13 @@
   "Compose a view of a pull request's review page: the sections a reader should
   see first, in order, under headings with a claim each; everything else stays
   on the page, folded. `view` is EDN:
-  {:title \"Safe to merge?\" :intro \"…\" :author \"claude\"
-   :sections [{:title \"…\" :claim \"…\" :items [[:form \"path\" \"defn x\"] [:entity :fn.x/y] [:file \"path\"]]}]}
-  Items name what the decorated report already shows. Returns the view's URL and
+  {:title \"Safe to merge?\" :question \"…\" :intro \"…\" :author \"claude\"
+   :sections [{:title \"…\" :claim \"…\" :folded false
+               :items [[:form \"path\" \"defn x\"] [:change \"path\" \"defn x\" \"arity 1 › let 2 › binding y\"]
+                       [:entity :fn.x/y] [:file \"path\"] [:header] [:rename \"old\" \"new\"]]}]}
+  Items name what the decorated report already shows: a form, one change inside
+  it by its printed path, an entity, a file, the registry header, a rename
+  roll-up. A folded section is present but closed. Returns the view's URL and
   every item that does not resolve. A PR can hold several named views."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
            ^{:doc "View name, used in the URL (e.g. safe-to-merge)" :type "string"} name

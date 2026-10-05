@@ -3,7 +3,7 @@
   first, in the order and under the headings a reviewer or a model chose, with
   everything the view did not name folded at the end. Nothing is rendered that
   the full page does not have, and nothing is dropped, only deferred."
-  (:require [clojure.string :as str]
+  (:require [sdiff.core :as core]
             [sdiff.decorate :as decorate]
             [sdiff.render.html :as html]))
 
@@ -11,11 +11,20 @@
 
 (defn- form-of [file form] (some #(when (= form (decorate/form-id %)) %) (:forms file)))
 
-(defn item-problem [ctx [kind a b :as item]]
+(defn- change-of [file form at]
+  (some #(when (= at (core/fmt-path (:path %))) %) (:changes form)))
+
+(defn item-problem [ctx [kind a b c :as item]]
   (case kind
     :form (decorate/validate-ref ctx {:file a :form b})
+    :change (or (decorate/validate-ref ctx {:file a :form b})
+                (let [f (file-of (:report ctx) a)]
+                  (when-not (change-of f (form-of f b) c) (str "no change at " (pr-str c) " in " b))))
     :file (decorate/validate-ref ctx {:file a})
     :entity (decorate/validate-ref ctx {:entity a})
+    :header nil
+    :rename (when-not (some #(and (= a (:from %)) (= b (:to %))) (:renames (:report ctx)))
+              (str "no rename " a " → " b " in this PR"))
     (str "unknown item " (pr-str item))))
 
 (defn validate
@@ -26,12 +35,21 @@
              :let [p (item-problem ctx item)] :when p]
          {:section (inc n) :item item :problem p})))
 
-(defn- render-item [report [kind a b :as item]]
+(defn- render-item [report [kind a b c :as item]]
   (case kind
     :form (let [f (file-of report a) fm (when f (form-of f b))]
             (if fm
               [:div.view-item [:div.where [:code a]] (html/form-view f fm)]
               (decorate/problem "no changed form " (pr-str b) " in " a)))
+    :change (let [f (file-of report a) fm (when f (form-of f b)) ch (when fm (change-of f fm c))]
+              (if ch
+                [:div.view-item [:div.where [:code a] " · " [:code c]]
+                 (html/form-view f (assoc fm :changes [ch] :extraction nil))]
+                (decorate/problem "no change at " (pr-str c) " in " (pr-str b) " of " a)))
+    :header [:div.view-item (decorate/header report)]
+    :rename (if-let [r (some #(when (and (= a (:from %)) (= b (:to %))) %) (:renames report))]
+              [:div.view-item [:ul.renames [:li "rename " [:code a] " → " [:code b] [:span.n (str (:count r) " sites across the PR")]]]]
+              (decorate/problem "no rename " a " → " b " in this PR"))
     :file (if-let [f (file-of report a)]
             (html/file-view nil nil f)
             (decorate/problem "no changed Clojure file " a))
@@ -55,14 +73,17 @@
     (list
      [:header.view-head
       [:h1 (:title view)]
-      [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report"]
+      [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report" (when (:question view) (list " · answers: " [:em (:question view)]))]
       (when (:intro view) [:p.intro (decorate/code-spans (:intro view))])]
      [:nav.toc (for [[i s] (map-indexed vector (:sections view))] [:a {:href (str "#view-" (inc i))} (str (inc i) ". " (:title s))])]
-     (for [[i s] (map-indexed vector (:sections view))]
-       [:section.view-section {:id (str "view-" (inc i))}
-        [:h2 [:span.n (str (inc i))] (:title s)]
-        (when (:claim s) [:p.claim.inferred-claim (decorate/code-spans (:claim s))])
-        (for [item (:items s)] (render-item report item))])
+     (for [[i s] (map-indexed vector (:sections view))
+           :let [body (list (when (:claim s) [:p.claim.inferred-claim (decorate/code-spans (:claim s))])
+                            (for [item (:items s)] (render-item report item)))]]
+       (if (:folded s)
+         [:details.view-section {:id (str "view-" (inc i))}
+          [:summary [:h2 [:span.n (str (inc i))] (:title s) [:span.mute " · folded"]]] body]
+         [:section.view-section {:id (str "view-" (inc i))}
+          [:h2 [:span.n (str (inc i))] (:title s)] body]))
      [:details.everything-else
       [:summary (str "Everything else: " (count rest-files) " file" (when (not= 1 (count rest-files)) "s") " the view did not single out")]
       (for [f rest-files] (html/file-view nil nil f))])))
