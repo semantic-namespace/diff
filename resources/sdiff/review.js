@@ -39,6 +39,29 @@
     });
   });
 
+  const levels = [
+    { sel: 'article.file', head: ':scope > h2' },
+    { sel: 'section.form', head: ':scope > h3' }];
+  const allOf = sel => [...document.querySelectorAll(sel)].filter(x => !x.closest('.sd-panel'));
+  levels.forEach(({ sel, head }) => allOf(sel).forEach(box => {
+    const h = box.querySelector(head);
+    if (!h) return;
+    h.classList.add('sd-fold');
+    h.title = 'Click to fold; Alt+click folds or unfolds all';
+    h.addEventListener('click', e => {
+      if (e.target.closest('button, a, .sd-editor')) return;
+      const fold = !box.classList.contains('sd-folded');
+      (e.altKey ? allOf(sel) : [box]).forEach(b => b.classList.toggle('sd-folded', fold));
+      e.preventDefault();
+    });
+  }));
+  allOf('details > summary').forEach(sm => sm.addEventListener('click', e => {
+    if (!e.altKey) return;
+    e.preventDefault();
+    const open = !sm.parentElement.open;
+    allOf('details').forEach(d => { d.open = open; });
+  }));
+
   const verdict = el('select', { onchange: e => { state.verdict = e.target.value; changed(); } },
     ...['comment', 'approve', 'request-changes'].map(v => el('option', { value: v }, v.replace('-', ' '))));
   verdict.value = state.verdict;
@@ -52,6 +75,7 @@
     el('div', { class: 'sd-head', onclick: () => panel.classList.toggle('sd-open') }, el('strong', {}, 'Review ' + cfg.ref), count),
     el('div', { class: 'sd-body' },
       cfg.author ? el('p', { class: 'sd-hint' }, 'Author: ' + cfg.author + '. GitHub only allows a comment review on your own pull request.') : null,
+      el('p', { class: 'sd-hint' }, 'Click a file or form heading to fold it. Alt+click folds or unfolds every one at that level, and Alt+click on a source toggle opens or closes them all.'),
       el('label', {}, 'Verdict ', verdict), summary, list,
       el('div', { class: 'sd-row' },
         el('button', { type: 'button', onclick: preview }, 'Preview'), postBtn),
