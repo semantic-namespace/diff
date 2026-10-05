@@ -174,3 +174,19 @@
     (is (contains? paths [["arity" 1]]) "the delegating arity is the new piece")
     (is (some #(= ["arity" 2] (first %)) paths) "the old body is diffed inside the 2-arity")
     (is (not-any? #(= [["body"]] %) paths) "no stray removal of the old body")))
+
+(deftest a-moved-form-is-a-semantic-change
+  (let [r (c/file-report "o.clj" "(defn a [] 1)\n(defn b [] (a))\n(defn c [] 2)\n" "(defn b [] (a))\n(defn a [] 1)\n(defn c [] 2)\n")]
+    (is (= :semantic (:verdict r)))
+    (is (= [["defn" "a"]] (:moved r)) "the smallest set of forms whose position changed")
+    (is (empty? (:forms r)) "no form's code changed"))
+  (is (empty? (:moved (c/file-report "s.clj" "(defn a [] 1)\n(defn b [] 2)\n" "(defn a [] 1)\n(defn b [] 3)\n")))))
+
+(deftest an-edited-map-in-a-vector-is-a-change-inside-it
+  (let [old "(def cases [{:label \"a\" :from [\"x\"]} {:label \"b\" :from [\"y\"]}])"
+        new "(def cases [{:label \"a\" :from [\"emailtok\"]} {:label \"b\" :from [\"y\"]}])"
+        [f] (:forms (c/file-report "v.clj" old new))
+        [chg] (:changes f)]
+    (is (= 1 (count (:changes f))))
+    (is (= :replaced (:op chg)))
+    (is (= ["key" ":from"] (last (:path chg))) "the change is named by its place inside the element")))

@@ -7,8 +7,9 @@
 
 (defn- kept-list [kept] (str/join ", " (map #(short (n/string (first %))) kept)))
 
-(defn print-file [{:keys [path verdict forms status]}]
+(defn print-file [{:keys [path verdict forms status moved]}]
   (println (str "\n■ " path "   [" (name verdict) (case status "A" ", new file" "D" ", deleted" "") "]"))
+  (doseq [id moved] (println (str "  " (str/join " " (map str id)) "   ↕ moved to a different position among the forms")))
   (doseq [{:keys [id was changes extraction note]} forms]
     (println (str "  " (str/join " " (map str id))
                   (when was (str "   ⇠ was " (str/join " " (map str was))))

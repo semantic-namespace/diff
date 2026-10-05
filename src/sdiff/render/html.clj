@@ -104,12 +104,14 @@
 (def verdict-label {:semantic "changes behaviour" :rename-only "rename only" :comments-only "comments only" :whitespace-only "formatting only"})
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
 
-(defn- file-view [gh-url pr-num {:keys [path verdict forms status] :as fr}]
+(defn- file-view [gh-url pr-num {:keys [path verdict forms status moved] :as fr}]
   [:article.file {:class (name verdict) :id (str "f-" (hash path)) :data-file path}
    [:h2 [:span.verdict (verdict-label verdict)]
     [:code.path path]
     (case status "A" [:span.tag.tag-add "new file"] "D" [:span.tag.tag-del "deleted"] nil)
     (when gh-url [:a.gh {:href (str gh-url "/pull/" pr-num "/files") :target "_blank"} "comment on GitHub"])]
+   (when (seq moved)
+     [:ul.renames (for [id moved] [:li "moved " [:code (str/join " " (remove nil? (map str id)))] [:span.n "position among the forms changed"]])])
    (when (= verdict :semantic) (map (partial form-view fr) forms))
    (when (#{:comments-only :rename-only} verdict)
      [:details [:summary "forms touched"]

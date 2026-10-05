@@ -228,11 +228,44 @@
             (>= (aget t (inc i) j) (aget t i (inc j))) (recur (inc i) j acc)
             :else (recur i (inc j) acc)))))
 
-(defn lcs-align [path a b]
+(defn- lcs-of
+  "A longest common subsequence of two sequences of values, as the values."
+  [xs ys]
+  (let [n (count xs) m (count ys) t (make-array Long/TYPE (inc n) (inc m))]
+    (doseq [i (range (dec n) -1 -1) j (range (dec m) -1 -1)]
+      (aset t i j (long (if (= (nth xs i) (nth ys j)) (inc (aget t (inc i) (inc j))) (max (aget t (inc i) j) (aget t i (inc j)))))))
+    (loop [i 0 j 0 acc []]
+      (cond (or (= i n) (= j m)) acc
+            (= (nth xs i) (nth ys j)) (recur (inc i) (inc j) (conj acc (nth xs i)))
+            (>= (aget t (inc i) j) (aget t i (inc j))) (recur (inc i) j acc)
+            :else (recur i (inc j) acc)))))
+
+(defn lcs-align
+  "Elements of a vector or set: exact matches by LCS first; leftover inner
+  nodes of the same tag then pair in order, so an edited map in a vector of
+  maps reads as a change inside it rather than a removal and an addition. When
+  what is left on both sides is plain values, the vector is reported replaced
+  as a whole rather than value by value."
+  [path a b]
   (let [xs (kids a) ys (kids b) pairs (set (lcs-pairs xs ys))
-        ri (set (map first pairs)) rj (set (map second pairs))]
-    (concat (for [i (range (count xs)) :when (not (ri i))] {:op :removed :path (conj path [(str "#" (inc i) " " (short (n/string (xs i))))]) :old (xs i)})
-            (for [j (range (count ys)) :when (not (rj j))] {:op :added :path (conj path [(str "#" (inc j) " " (short (n/string (ys j))))]) :new (ys j)}))))
+        ri (set (map first pairs)) rj (set (map second pairs))
+        lo (vec (remove ri (range (count xs)))) ln (vec (remove rj (range (count ys))))
+        pairable? (fn [i j] (let [x (xs i) y (ys j)] (and (seq (kids x)) (seq (kids y)) (= (n/tag x) (n/tag y)) (= (head x) (head y)))))
+        zipped (loop [lo lo ln ln acc []]
+                 (if (and (seq lo) (seq ln))
+                   (if (pairable? (first lo) (first ln))
+                     (recur (rest lo) (rest ln) (conj acc [(first lo) (first ln)]))
+                     (recur (rest lo) (rest ln) acc))
+                   acc))
+        zi (set (map first zipped)) zj (set (map second zipped))
+        step (fn [k i] [(str "#" (inc i) " " (short (n/string k)))])
+        rest-old (remove zi lo) rest-new (remove zj ln)
+        leaves? (and (seq rest-old) (seq rest-new) (every? #(empty? (kids (xs %))) rest-old) (every? #(empty? (kids (ys %))) rest-new))]
+    (if (and leaves? (empty? zipped))
+      [{:op :replaced :path path :old a :new b}]
+      (concat (mapcat (fn [[i j]] (diff (conj path (step (xs i) i)) (xs i) (ys j))) zipped)
+              (for [i rest-old] {:op :removed :path (conj path (step (xs i) i)) :old (xs i)})
+              (for [j rest-new] {:op :added :path (conj path (step (ys j) j)) :new (ys j)})))))
 
 (defn seq-align
   "Children of a generic form: exact matches by LCS first, then leftovers paired
@@ -402,7 +435,9 @@
   value, a function new in this file whose body shares a subtree with the old
   expression, verbatim or modulo renamed locals. A form whose only changes are
   in its argument vector is tagged signature-only. A removed and an added form
-  that `pair-forms` matches become one entry with `:was`, the old identity."
+  that `pair-forms` matches become one entry with `:was`, the old identity.
+  `:moved` lists forms whose position among the others changed; in Clojure a
+  definition must precede its callers, so a move is a semantic change."
   [path old new]
   (let [ia (index old) ib (index new)
         ids (distinct (concat (keys ia) (keys ib)))
@@ -443,6 +478,11 @@
         base (map (fn [{:keys [id] :as r}]
                     (if-let [e (and (= :added-form (:op (first (:changes r)))) (ext-by-fn (second id)))]
                       (assoc r :extraction e) r)) base)
+        order (let [common (set (filter ib (keys ia)))
+                    before (filter common (map top-id (forms old)))
+                    after (filter common (map top-id (forms new)))
+                    kept (set (lcs-of (vec before) (vec after)))]
+                (vec (remove kept after)))
         res (remove #(empty? (:changes %)) base)
         res (map (fn [{:keys [changes] :as r}]
                    (cond-> r (and (seq changes) (every? #(= ["args"] (first (:path %))) changes))
@@ -451,9 +491,11 @@
         sem? (fn [r] (some #(not= :comments (:op %)) (:changes r)))]
     {:path path
      :old old :new new
-     :verdict (cond (empty? res) :whitespace-only
+     :verdict (cond (seq order) :semantic
+                    (empty? res) :whitespace-only
                     (not-any? sem? res) :comments-only
                     :else :semantic)
+     :moved order
      :forms (vec res)}))
 
 (defn tok
@@ -474,7 +516,7 @@
         mark (fn [c] (if-let [k (and (ren (tok c)) (tok c))] (assoc c :rename k) c))
         files (mapv (fn [f] (update f :forms (fn [fs] (mapv #(update % :changes (fn [cs] (mapv mark cs))) fs)))) files)
         sem? (fn [r] (some #(and (not= :comments (:op %)) (not (:rename %))) (:changes r)))
-        files (mapv (fn [f] (cond-> f (and (= :semantic (:verdict f)) (not-any? sem? (:forms f))) (assoc :verdict :rename-only))) files)]
+        files (mapv (fn [f] (cond-> f (and (= :semantic (:verdict f)) (empty? (:moved f)) (not-any? sem? (:forms f))) (assoc :verdict :rename-only))) files)]
     {:files files
      :renames (mapv (fn [[[o nw] c]] {:from o :to nw :count c}) (sort-by (comp - val) ren))}))
 
