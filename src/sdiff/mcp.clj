@@ -166,19 +166,19 @@
                         "\n\nall items resolved")))))
 
 (defn ^{:mcp-type :prompt :mcp-name "review"} review-prompt
-  "Review a pull request from its structural report: derived facts first, inferred notes marked, then a GitHub review."
+  "Review a pull request for a human reader: derived facts and graph risk first, then what it means, as marked notes and a view."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr]}]
   (eg/make-get-prompt-result
    [(es/make-text-prompt-message
      "user"
-     (str "Review " pr " with sdiff.\n\n"
-          "1. Call structural-diff for it. The report names every change by form and path. Lines marked `derived ·` come from a tool "
-          "(the registry's contract diff, dependents, consumers, test coverage); treat them as facts. Lines marked `inferred ·` are earlier readings; do not restate them.\n"
-          "2. Read the whole report before judging. Start from the registry header, then the forms whose verdict is semantic. Formatting, comments and rename-only files need no reading.\n"
-          "3. Where a claim needs code the report does not show (an unchanged helper a change relies on), read that code and say so in the claim's basis.\n"
-          "4. Call annotate with your readings: one per form or entity, each with `basis` naming the derived facts or code it rests on, plus one `page` annotation with the overall reading. Fix any target it reports as unresolved.\n"
-          "5. Compose a view for the question the user is asking (safe to merge? what changes for my service?): call view with the sections a reader should see first, each with a claim, naming forms and entities from the report. Share the view's URL and the full page's URL beside it.\n"
-          "6. Call review-draft with the verdict and the notes worth sending to the author, and show the result. Call post-review only when the user agrees."))]
+     (str "Review " pr " with sdiff, for a human reader.\n\n"
+          "1. Call structural-diff for it. Lines marked `derived ·` come from a tool: the structure of each change, the registry's contract diff, and the risk ranking from the system graph. Treat them as facts. Lines marked `inferred ·` are earlier readings; do not restate them.\n"
+          "2. Start from the registry header and its risk ranking, then read the forms behind the top risks. Formatting, comments and rename-only files need no reading.\n"
+          "3. Decide what the PR means, in the reader's terms: what behaviour changes, for which users or services, what could break and how you would notice, and what the reviewer has to decide. Paths, bindings and line-level detail belong in an annotation's basis, not its text.\n"
+          "4. Where a claim needs code the report does not show, read it and say so in the basis.\n"
+          "5. Call annotate: one `page` annotation of two or three sentences on what the PR means and how risky it is, then one per form or entity only where something is worth a reviewer's attention (a risk, a decision, a surprise). Write each as a plain statement of consequence; put the evidence in `basis`.\n"
+          "6. Compose a view for the question the user is asking (safe to merge? what changes for my service?): sections in the order a reader should take them, each claim one plain sentence about meaning or risk, items the forms and entities that back it. Share the view's URL and the full page's URL.\n"
+          "7. Call review-draft with the verdict and only the notes worth sending to the author, and show the result. Call post-review only when the user agrees."))]
    {}))
 
 (def instructions

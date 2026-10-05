@@ -83,7 +83,7 @@
       "entity targets need a registry; this server has none")
     :else (str "unknown target " (pr-str on))))
 
-(def ^:private block-tags #{:div :p :h4 :h5 :li :tr :ul :table :tbody})
+(def ^:private block-tags #{:div :p :h4 :h5 :li :tr :ul :table :tbody :details :summary})
 
 (defn hiccup->text
   "The text a decoration carries, one line per block element, for a model or a
