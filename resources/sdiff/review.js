@@ -12,7 +12,7 @@
   let previewed = null;
   let saveTimer = null;
   const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sdiff-Token': cfg.token }, body: JSON.stringify(body) });
-  const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => post('/state', { pr: cfg.ref, review: state }).catch(() => {}), 300); };
+  const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => post('/state', { pr: cfg.ref, review: { forms: state.forms, notes: state.notes, verdict: state.verdict, summary: state.summary } }).catch(() => {}), 300); };
   const el = (tag, attrs = {}, ...kids) => {
     const e = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) k === 'class' ? e.className = v : k.startsWith('on') ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v);

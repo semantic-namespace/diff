@@ -97,7 +97,7 @@
         config (page-config r)
         review (state/review repo num)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
-        v (when view-name (get (:views review) view-name))]
+        v (when view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name))))]
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
                  :body (cond v (view/render r v)
@@ -160,7 +160,8 @@
 (defn- state-post [req]
   (authorized req (fn [{:keys [pr review]}]
                     (let [{:keys [repo num]} (github/parse-pr pr)]
-                      (json-response 200 (state/save-review! repo num (update review :forms #(update-keys % (fn [k] (subs (str k) 1))))))))))
+                      (json-response 200 (state/save-review! repo num (-> (select-keys review [:forms :notes :verdict :summary])
+                                                                           (update :forms #(update-keys % (fn [k] (subs (str k) 1)))))))))))
 
 (defn- settings-post [req]
   (authorized req (fn [{:keys [settings]}] (json-response 200 (state/save-settings! settings)))))

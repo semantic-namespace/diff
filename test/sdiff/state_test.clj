@@ -17,3 +17,12 @@
     (is (= {"src/a/b.clj|defn f" "123"} (:forms (state/review "owner/repo" 7))))
     (is (= 1 (count (:notes (state/review "owner/repo" 7)))))
     (is (= state/empty-review (state/review "owner/repo" 8)) "another PR starts empty")))
+
+(deftest the-panel-save-keeps-annotations-and-views
+  (binding [state/*dir* (tmp-dir)]
+    (state/save-review! "o/r" 1 {:annotations [{:on "page" :text "x"}] :views {"safe" {:title "s"}}})
+    (state/save-review! "o/r" 1 {:forms {"f|defn a" "1"} :notes [] :verdict "approve" :summary ""})
+    (let [r (state/review "o/r" 1)]
+      (is (= [{:on "page" :text "x"}] (:annotations r)))
+      (is (= {"safe" {:title "s"}} (:views r)))
+      (is (= "approve" (:verdict r))))))
