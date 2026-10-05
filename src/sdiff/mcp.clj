@@ -45,6 +45,12 @@
                         "  ← " (:file note) " " (or (:form note) (str "line " (:line note)))
                         (when (:at note) (str " › " (:at note)))))))
 
+(defn- ui-server []
+  (let [f (java.io.File. (state/dir) "server.edn")]
+    (if (.exists f)
+      (clojure.edn/read-string (slurp f))
+      (throw (ex-info "no review server is running: start `bb sdiff serve` or the atlas review server" {})))))
+
 (defn ^{:mcp-type :tool
         :mcp-annotations (eg/make-tool-annotations :title "Structural diff" :read-only-hint? true :open-world-hint? true)}
   structural-diff
@@ -54,16 +60,22 @@
   (diffed from their merge base). `format` is text (default, compact) or edn
   (full: every form's old and new source with line ranges). Each file has a
   verdict; inside semantic files each change is `<form> › <path>`, the names
-  review notes refer to."
+  review notes refer to. With a review server running, a PR's report comes
+  from it and carries the derived decorations and annotations the page shows."
   [{:keys [^{:doc "Pull request: owner/repo#N or https://github.com/owner/repo/pull/N" :type "string" :required? false} pr
            ^{:doc "Local git repository path (instead of pr)" :type "string" :required? false} repo
            ^{:doc "Base ref, with repo" :type "string" :required? false} base
            ^{:doc "Head ref, with repo" :type "string" :required? false} head
            ^{:doc "text or edn" :type "string" :required? false :default "text"} format]}]
-  (let [r (cond pr (pr-report pr)
-                (and repo base head) (git/report repo base head :merge-base? true)
-                :else (throw (ex-info "give pr, or repo with base and head" {})))]
-    (text-result (if (= "edn" format) (pr-str (sedn/report->edn r)) (report-text r)))))
+  (let [server (try (ui-server) (catch Exception _ nil))]
+    (if (and pr server (not= "edn" format))
+      (let [{:keys [status body]} (http/get (str (:url server) "pr?ref=" (java.net.URLEncoder/encode pr "UTF-8") "&format=text") {:throw false :timeout 300000})]
+        (when (not= 200 status) (throw (ex-info (str "review server: " status " " body) {})))
+        (text-result body))
+      (let [r (cond pr (pr-report pr)
+                    (and repo base head) (git/report repo base head :merge-base? true)
+                    :else (throw (ex-info "give pr, or repo with base and head" {})))]
+        (text-result (if (= "edn" format) (pr-str (sedn/report->edn r)) (report-text r)))))))
 
 (defn ^{:mcp-type :tool
         :mcp-annotations (eg/make-tool-annotations :title "Draft a review" :read-only-hint? true :open-world-hint? true)}
@@ -98,12 +110,6 @@
                                true)]
     (text-result (str "posted " (:state res) " " (:html_url res) "\n" (placement-text placed)))))
 
-(defn- ui-server []
-  (let [f (java.io.File. (state/dir) "server.edn")]
-    (if (.exists f)
-      (clojure.edn/read-string (slurp f))
-      (throw (ex-info "no review server is running: start `bb sdiff serve` or the atlas review server" {})))))
-
 (defn ^{:mcp-type :tool
         :mcp-annotations (eg/make-tool-annotations :title "Annotate the review page" :read-only-hint? false :destructive-hint? false :idempotent-hint? true)}
   annotate
@@ -129,6 +135,21 @@
                              (str/join "\n" (for [{:keys [on problem]} (:problems res)] (str "  " (pr-str on) ": " problem))))
                         "\n\nall annotations resolved")))))
 
+(defn ^{:mcp-type :prompt :mcp-name "review"} review-prompt
+  "Review a pull request from its structural report: derived facts first, inferred notes marked, then a GitHub review."
+  [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr]}]
+  (eg/make-get-prompt-result
+   [(es/make-text-prompt-message
+     "user"
+     (str "Review " pr " with sdiff.\n\n"
+          "1. Call structural-diff for it. The report names every change by form and path. Lines marked `derived ·` come from a tool "
+          "(the registry's contract diff, dependents, consumers, test coverage); treat them as facts. Lines marked `inferred ·` are earlier readings; do not restate them.\n"
+          "2. Read the whole report before judging. Start from the registry header, then the forms whose verdict is semantic. Formatting, comments and rename-only files need no reading.\n"
+          "3. Where a claim needs code the report does not show (an unchanged helper a change relies on), read that code and say so in the claim's basis.\n"
+          "4. Call annotate with your readings: one per form or entity, each with `basis` naming the derived facts or code it rests on, plus one `page` annotation with the overall reading. Fix any target it reports as unresolved.\n"
+          "5. Call review-draft with the verdict and the notes worth sending to the author, and show the result. Call post-review only when the user agrees."))]
+   {}))
+
 (def instructions
   "Structural review of Clojure pull requests. Call structural-diff first and
   review from its form paths. Write notes against `form` and `at` exactly as
@@ -141,6 +162,6 @@
   (ms/run-mcp-server {:traffic-logger (if (System/getenv "SDIFF_MCP_DEBUG") stl/compact-server-traffic-logger stl/nop-traffic-logger)
                       :info (es/make-info "sdiff" "0.1.0" "Structural review of Clojure pull requests")
                       :instructions instructions
-                      :vars [#'structural-diff #'review-draft #'post-review #'annotate]
+                      :vars [#'structural-diff #'review-draft #'post-review #'annotate #'review-prompt]
                       :transport :stdio
                       :print-banner? false}))

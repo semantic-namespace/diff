@@ -3,7 +3,8 @@
   (:refer-clojure :exclude [short])
   (:require [rewrite-clj.node :as n]
             [clojure.string :as str]
-            [sdiff.core :refer [fmt-path head short]]))
+            [sdiff.core :refer [fmt-path head short]]
+            [sdiff.decorate :as decorate]))
 
 (defn- kept-list [kept] (str/join ", " (map #(short (n/string (first %))) kept)))
 
@@ -35,6 +36,9 @@
                                    (str "    ~ " p (when extracted (str " [extracted → " extracted "]"))
                                         "\n        - " (short (n/string old)) "\n        + " (short (n/string new))
                                         (when-let [t (:moved-to c)] (str "\n        ⇢ " (kept-list (:kept c)) " moved to " (fmt-path t)))))))))
+    (when decorate/*ctx*
+      (doseq [t (decorate/form-text {:path path} {:id id})]
+        (println (str/join "\n" (map #(str "      " %) (str/split-lines t))))))
     (when extraction
       (when (seq (:renamed extraction))
         (println (str "      renamed locals: " (str/join ", " (map (fn [[o nw]] (str o " → " nw)) (:renamed extraction))))))
@@ -42,8 +46,10 @@
         (println (str "      " (if (= op :dropped) "not carried over, from around the extracted part:" (str "drift: " (name op) " " (fmt-path path)))
                       (when old (str "  - " (short (n/string old)))) (when new (str "  + " (short (n/string new))))))))))
 
-(defn print-report [{:keys [clj renames other]}]
+(defn print-report [{:keys [clj renames other] :as r}]
   (doseq [{:keys [from to count]} renames] (println (str "≈ rename " from " → " to "  (" count " sites)")))
+  (when decorate/*ctx*
+    (doseq [t (decorate/header-text r)] (println t) (println)))
   (doseq [fr clj] (print-file fr))
   (when (seq other)
     (println (str "\n" (count other) " non-Clojure file" (when (not= 1 (count other)) "s") ": " (str/join ", " (map :path other))))))

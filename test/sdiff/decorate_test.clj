@@ -35,3 +35,9 @@
     (try (is (nil? (d/validate-ref ctx {:entity ":fn/x"})))
          (is (= "no such entity" (d/validate-ref ctx {:entity ":fn/y"})))
          (finally (swap! d/ref-validators #(remove (fn [[k]] (= ::t k)) %))))))
+
+(deftest decorations-have-a-text-form
+  (is (= "derived · tool\ndeclares :fn/x · changed\n- a → b\n- c\nkey v" 
+         (d/hiccup->text (d/derived "tool" [:p "declares " [:code.ent ":fn/x"] " · " [:span.tag "changed"]]
+                                    [:ul.ids [:li "a → b"] [:li "c"]]
+                                    [:table.contract [:tbody [:tr [:td "key"] [:td "v"]]]])))))

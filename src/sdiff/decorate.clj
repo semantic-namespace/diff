@@ -74,3 +74,35 @@
       (some (fn [[_ f]] (f ctx on)) @ref-validators)
       "entity targets need a registry; this server has none")
     :else (str "unknown target " (pr-str on))))
+
+(def ^:private block-tags #{:div :p :h4 :h5 :li :tr :ul :table :tbody})
+
+(defn hiccup->text
+  "The text a decoration carries, one line per block element, for a model or a
+  terminal to read what the page shows."
+  [h]
+  (letfn [(tag-of [x] (keyword (first (str/split (name (first x)) #"[.#]"))))
+          (walk [x]
+            (cond (string? x) x
+                  (nil? x) ""
+                  (vector? x) (if (keyword? (first x))
+                                (let [tag (tag-of x)
+                                      kids (remove map? (rest x))
+                                      inner (apply str (map walk kids))
+                                      inner (if (= :td tag) (str inner " ") inner)]
+                                  (if (block-tags tag) (str "\n" (if (= :li tag) "- " "") inner) inner))
+                                (apply str (map walk x)))
+                  (seq? x) (apply str (map walk x))
+                  :else (str x)))]
+    (->> (str/split-lines (walk h))
+         (map str/trimr)
+         (remove str/blank?)
+         (str/join "\n"))))
+
+(defn form-text [file form]
+  (concat (map hiccup->text (form-decorations file form))
+          (map hiccup->text (form-annotations file form))))
+
+(defn header-text [report]
+  (concat (map hiccup->text (header report))
+          (map hiccup->text (map render-annotation (annotations-on *ctx* "page")))))

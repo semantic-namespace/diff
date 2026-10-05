@@ -18,6 +18,7 @@
             [org.httpkit.server :as http]
             [sdiff.github :as github]
             [sdiff.render.html :as html]
+            [sdiff.render.text :as text]
             [sdiff.review :as review]
             [sdiff.decorate :as decorate]
             [sdiff.state :as state]))
@@ -80,6 +81,14 @@
 (defn- page-config [r]
   (let [{:keys [repo num url author]} (:pr r)]
     {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
+
+(defn- pr-text [ref]
+  (let [r (github/cached-report ref)
+        {:keys [repo num]} (:pr r)
+        ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
+    (binding [decorate/*ctx* ctx]
+      (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n\n"
+           (with-out-str (text/print-report r))))))
 
 (defn- pr-page [ref]
   (let [r (github/cached-report ref)
@@ -144,7 +153,9 @@
     (case [request-method uri]
       [:get "/"]       (html-response (index-page))
       [:get "/pr"]     (if-let [ref (query-param req "ref")]
-                         (html-response (pr-page ref))
+                         (if (= "text" (query-param req "format"))
+                           {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref)}
+                           (html-response (pr-page ref)))
                          {:status 302 :headers {"Location" "/"}})
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
