@@ -5,13 +5,9 @@
   runs the server.
 
   Every POST needs the token printed into the page at startup, so another site
-  open in the same browser cannot post reviews through it.
-
-  Served on any address other than loopback, for example a VPN interface, every
-  request also needs an access key: the startup URL carries it once, the server
-  turns it into a SameSite cookie and redirects. Without the key, anyone who can
-  reach the address could read private pull requests and post reviews with the
-  credentials of whoever runs the server."
+  open in the same browser cannot post reviews through it. Served on an address
+  other than loopback, anyone who can reach it can read pull requests and post
+  reviews as the user running the server."
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -22,7 +18,6 @@
             [sdiff.review :as review]))
 
 (def token (str (random-uuid)))
-(def access-key (str (random-uuid)))
 
 (defn- resource [n] (slurp (io/resource (str "sdiff/" n))))
 
@@ -90,34 +85,11 @@
     (catch Exception e
       {:status 500 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (str "error: " (ex-message e))})))
 
-(defn- cookie [req k]
-  (some (fn [kv] (let [[a b] (str/split (str/trim kv) #"=" 2)] (when (= a k) b)))
-        (str/split (or (get-in req [:headers "cookie"]) "") #";")))
-
-(defn- keyed
-  "Wraps `h` so every request needs the access key, as a cookie or once in the URL."
-  [h]
-  (fn [req]
-    (cond
-      (= access-key (cookie req "sdiff-key")) (h req)
-      (= access-key (query-param req "key"))
-      {:status 302
-       :headers {"Location" (let [q (->> (str/split (or (:query-string req) "") #"&")
-                                         (remove #(or (str/blank? %) (str/starts-with? % "key=")))
-                                         (str/join "&"))]
-                              (str (:uri req) (when (seq q) (str "?" q))))
-                 "Set-Cookie" (str "sdiff-key=" access-key "; Path=/; HttpOnly; SameSite=Strict")}}
-      :else {:status 401 :headers {"Content-Type" "text/plain; charset=utf-8"}
-             :body "This sdiff server needs its access link, printed where it was started."})))
-
 (defn loopback? [host] (contains? #{"127.0.0.1" "localhost" "::1"} host))
 
 (defn start!
-  "Serve on `host`:`port` (default 127.0.0.1); returns `{:stop f :url u}`, where
-  `u` is the address to open, with the access key when the host is not loopback."
+  "Serve on `host`:`port` (default 127.0.0.1); returns `{:stop f :url u}`."
   ([port] (start! port "127.0.0.1"))
   ([port host]
-   (let [local? (loopback? host)
-         stop (http/run-server (if local? #'handler (keyed #'handler)) {:ip host :port port})]
-     {:stop stop
-      :url (str "http://" host ":" port "/" (when-not local? (str "?key=" access-key)))})))
+   {:stop (http/run-server #'handler {:ip host :port port})
+    :url (str "http://" host ":" port "/")}))

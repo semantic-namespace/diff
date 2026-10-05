@@ -1,7 +1,10 @@
 body{padding-bottom:4rem}
-.sd-add{margin-left:.5rem;font:inherit;font-size:.75rem;color:var(--sem);background:transparent;border:1px solid var(--line);border-radius:4px;padding:.05rem .4rem;cursor:pointer}
-.sd-add:hover{background:var(--panel);border-color:var(--sem)}
-li.chg .sd-add{justify-self:start;margin:.2rem 0 0}
+.sd-add{margin-left:auto;flex:none;font:inherit;font-size:.75rem;line-height:1.4;color:var(--mute);background:transparent;border:1px solid transparent;border-radius:4px;padding:.05rem .45rem;cursor:pointer;opacity:.55}
+.sd-add:hover,.sd-add:focus-visible{opacity:1;color:var(--sem);background:var(--panel);border-color:var(--sem)}
+.form h3 .sd-add{order:99}
+.chg>.p{display:flex;align-items:baseline;flex-wrap:wrap;gap:.2rem .5rem}
+.chg:hover>.p .sd-add,.form h3:hover .sd-add{opacity:1}
+@media (hover:none){.sd-add{opacity:1;border-color:var(--line)}}
 .sd-editor{margin:.4rem 0 .6rem;display:grid;gap:.4rem}
 .sd-editor textarea,.sd-body textarea,.sd-body select,form.open input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.4rem .5rem;width:100%;box-sizing:border-box}
 .sd-row{display:flex;gap:.5rem;flex-wrap:wrap}

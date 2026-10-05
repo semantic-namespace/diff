@@ -31,10 +31,11 @@
   document.querySelectorAll('section.form[data-form]').forEach(sec => {
     const base = { file: sec.dataset.file, form: sec.dataset.form };
     const h3 = sec.querySelector('h3');
-    h3.append(el('button', { type: 'button', class: 'sd-add', title: 'Note on this form', onclick: () => openEditor(h3, base) }, '+ note'));
+    h3.append(el('button', { type: 'button', class: 'sd-add', title: 'Comment on ' + base.form, onclick: () => openEditor(h3, base) }, '💬 comment'));
     sec.querySelectorAll(':scope > ul.changes > li[data-at]').forEach(li => {
-      li.append(el('button', { type: 'button', class: 'sd-add', title: 'Note on this change',
-        onclick: () => openEditor(li, Object.assign({}, base, { at: li.dataset.at })) }, '+ note'));
+      const at = Object.assign({}, base, { at: li.dataset.at });
+      (li.querySelector(':scope > .p') || li).append(el('button', { type: 'button', class: 'sd-add', title: 'Comment on ' + where(at),
+        onclick: () => openEditor(li, at) }, '💬'));
     });
   });
 
