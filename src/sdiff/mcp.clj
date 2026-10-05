@@ -9,6 +9,7 @@
   exactly the grants of whoever runs it. Reports are cached per PR head commit,
   so a draft and its post see the same anchors."
   (:require [cheshire.core :as json]
+            [clojure.edn]
             [clojure.string :as str]
             [plumcp.core.api.entity-gen :as eg]
             [plumcp.core.api.entity-support :as es]
@@ -18,7 +19,9 @@
             [sdiff.git :as git]
             [sdiff.github :as github]
             [sdiff.render.text :as text]
-            [sdiff.review :as review]))
+            [sdiff.review :as review]
+            [babashka.http-client :as http]
+            [sdiff.state :as state]))
 
 (defn pr-report [pr] (github/cached-report pr))
 
@@ -95,6 +98,39 @@
                                true)]
     (text-result (str "posted " (:state res) " " (:html_url res) "\n" (placement-text placed)))))
 
+(defn- ui-server []
+  (let [f (java.io.File. (state/dir) "server.edn")]
+    (if (.exists f)
+      (clojure.edn/read-string (slurp f))
+      (throw (ex-info "no review server is running: start `bb sdiff serve` or the atlas review server" {})))))
+
+(defn ^{:mcp-type :tool
+        :mcp-annotations (eg/make-tool-annotations :title "Write a review page" :read-only-hint? false :destructive-hint? false :idempotent-hint? true)}
+  review-page
+  "Write the review page for a pull request: a walk in steps, each a claim backed
+  by blocks the review server renders from the structural report and, when the
+  server has a registry, the atlas registry. Replaces any earlier page for the
+  PR; nothing is sent to GitHub. `document` is EDN:
+  {:intro \"…\" :steps [{:title \"…\" :claim \"…\" :blocks [[:diff/form \"path\" \"defn x\"] [:diff/files] [:text \"…\"]
+  [:atlas/contract :fn.x/y] [:atlas/blast-radius :fn.x/y] [:atlas/data-flow :key/name]]}]
+  :registry {…what the server's atlas blocks need…}}.
+  Returns the page URL and every block the server cannot render, so fix those
+  and call again."
+  [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
+           ^{:doc "The review document, as EDN" :type "string"} document]}]
+  (let [{:keys [url token]} (ui-server)
+        {:keys [status body]} (http/post (str url "review-page")
+                                         {:headers {"content-type" "application/json" "x-sdiff-token" token}
+                                          :body (json/generate-string {:pr pr :document document})
+                                          :throw false})
+        res (json/parse-string body true)]
+    (when (not= 200 status) (throw (ex-info (str "review server: " (or (:error res) status)) {})))
+    (text-result (str url (subs (:url res) 1)
+                      (if (seq (:problems res))
+                        (str "\n\n" (count (:problems res)) " block(s) will render as problems:\n"
+                             (str/join "\n" (for [{:keys [step block problem]} (:problems res)] (str "  step " step " " (pr-str block) ": " problem))))
+                        "\n\nall blocks resolved")))))
+
 (def instructions
   "Structural review of Clojure pull requests. Call structural-diff first and
   review from its form paths. Write notes against `form` and `at` exactly as
@@ -107,6 +143,6 @@
   (ms/run-mcp-server {:traffic-logger (if (System/getenv "SDIFF_MCP_DEBUG") stl/compact-server-traffic-logger stl/nop-traffic-logger)
                       :info (es/make-info "sdiff" "0.1.0" "Structural review of Clojure pull requests")
                       :instructions instructions
-                      :vars [#'structural-diff #'review-draft #'post-review]
+                      :vars [#'structural-diff #'review-draft #'post-review #'review-page]
                       :transport :stdio
                       :print-banner? false}))

@@ -75,7 +75,7 @@
 
 (defn- with-attrs [[tag & more] attrs] (into [tag attrs] more))
 
-(defn- form-view [{:keys [old new path]} {:keys [id was changes extraction note]}]
+(defn form-view [{:keys [old new path]} {:keys [id was changes extraction note]}]
   (let [op0 (:op (first changes))
         full? (#{:added-form :removed-form} op0)
         node-old (when-not (= op0 :added-form) (get (index old) (or was id)))

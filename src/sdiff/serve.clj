@@ -9,6 +9,7 @@
   other than loopback, anyone who can reach it can read pull requests and post
   reviews as the user running the server."
   (:require [cheshire.core :as json]
+            [clojure.edn]
             [rewrite-clj.node]
             [sdiff.core]
             [clojure.java.io :as io]
@@ -18,9 +19,17 @@
             [sdiff.github :as github]
             [sdiff.render.html :as html]
             [sdiff.review :as review]
+            [sdiff.doc :as doc]
             [sdiff.state :as state]))
 
 (def token (str (random-uuid)))
+
+(defn- announce!
+  "Where this server is and its token, for local tools of the same user."
+  [url]
+  (let [f (io/file (state/dir) "server.edn")]
+    (io/make-parents f)
+    (spit f (pr-str {:url url :token token}))))
 
 (defn- resource [n] (slurp (io/resource (str "sdiff/" n))))
 
@@ -65,12 +74,31 @@
 (defn- pr-page [ref]
   (let [r (github/cached-report ref)
         {:keys [repo num url author]} (:pr r)
-        config {:ref (str repo "#" num) :repo repo :num num :url url :author author
-                :head (:head r) :token token :forms (form-index r)}]
+        config (page-config r)]
     (html/page (str "https://github.com/" repo) repo [r]
                :extra-head [:style (hc/raw (resource "review.css"))]
                :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
                                  [:script (hc/raw (resource "review.js"))]))))
+
+(defn- page-config [r]
+  (let [{:keys [repo num url author]} (:pr r)]
+    {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
+
+(defn- review-page [ref]
+  (let [{:keys [repo num]} (github/parse-pr ref)]
+    (if-let [d (state/page repo num)]
+      (let [r (github/cached-report ref)]
+        (doc/page d r (doc/context d r) :config (page-config r)))
+      (str "<!doctype html><meta charset=utf-8><p>No review page for " repo "#" num " yet. Write one with the review-page MCP tool or POST /review-page.</p>"))))
+
+(defn- review-page-post [req]
+  (authorized req (fn [{:keys [pr document]}]
+                    (let [{:keys [repo num]} (github/parse-pr pr)
+                          d (if (string? document) (clojure.edn/read-string document) document)
+                          r (github/cached-report pr)
+                          problems (doc/validate d (doc/context d r))]
+                      (state/save-page! repo num d)
+                      (json-response 200 {:url (str "/review?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8")) :problems problems})))))
 
 (defn- review-call [req post?]
   (if (not= token (get-in req [:headers "x-sdiff-token"]))
@@ -125,6 +153,8 @@
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
       [:post "/viewed"] (viewed-call req)
+      [:get "/review"] (if-let [ref (query-param req "ref")] (html-response (review-page ref)) {:status 302 :headers {"Location" "/"}})
+      [:post "/review-page"] (review-page-post req)
       [:get "/state"]  (state-get req)
       [:post "/state"] (state-post req)
       [:post "/settings"] (settings-post req)
@@ -140,5 +170,7 @@
   "Serve on `host`:`port` (default 127.0.0.1); returns `{:stop f :url u}`."
   ([port] (start! port "127.0.0.1"))
   ([port host]
-   {:stop (http/run-server #'handler {:ip host :port port})
-    :url (str "http://" host ":" port "/")}))
+   (let [url (str "http://" host ":" port "/")]
+     (announce! url)
+     {:stop (http/run-server #'handler {:ip host :port port})
+      :url url})))

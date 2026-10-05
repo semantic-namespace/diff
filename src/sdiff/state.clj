@@ -42,3 +42,11 @@
 
 (defn save-review! [repo num m]
   (write-edn! (review-file repo num) (merge empty-review (select-keys m (keys empty-review)))))
+
+(defn- page-file [repo num]
+  (let [[owner name] (str/split repo #"/")]
+    (io/file (dir) "reviews" owner name (str num ".page.edn"))))
+
+(defn page [repo num] (let [f (page-file repo num)] (when (.exists f) (edn/read-string (slurp f)))))
+
+(defn save-page! [repo num doc] (write-edn! (page-file repo num) doc))

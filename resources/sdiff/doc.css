@@ -1,0 +1,32 @@
+.doc-head h1{font-size:1.5rem;font-weight:600;margin:0 0 .3rem}
+.doc-head h1 a{color:var(--sem);text-decoration:none}
+.intro{max-width:70ch;font-size:1.05rem}
+.step{margin:2.5rem 0}
+.step h2{display:flex;align-items:baseline;gap:.6rem;font-size:1.25rem;font-weight:600;margin:0 0 .4rem}
+.step h2 .n{display:inline-flex;align-items:center;justify-content:center;min-width:1.7em;height:1.7em;border-radius:999px;background:var(--sem);color:var(--panel);font-size:.85rem}
+.claim{max-width:72ch;color:var(--ink);margin:0 0 1rem}
+.blk{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.8rem 1rem;margin:0 0 1rem}
+.blk-problem{border-color:var(--del);color:var(--del);background:var(--del-bg)}
+.blk-text{max-width:72ch}
+.blk-form .where{color:var(--mute);font-size:.85rem;margin-bottom:.3rem}
+.blk-form .form{border-top:0;padding-top:0;margin-top:0}
+.blk h4{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;font-size:1rem;font-weight:500;margin:0 0 .5rem}
+.blk h5{font-size:.8rem;font-weight:500;color:var(--mute);margin:.6rem 0 .2rem;text-transform:uppercase;letter-spacing:.03em}
+.blk .type{color:var(--mute);font-size:.85rem}
+.ent{background:var(--ren-bg);color:var(--ren);border-radius:3px;padding:0 .3rem}
+.aspects{display:flex;flex-wrap:wrap;gap:.3rem;margin:0 0 .6rem}
+.aspect{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:.05rem .5rem;color:var(--mute)}
+.aspect.add{background:var(--add-bg);color:var(--add);border-color:transparent}
+.aspect.del{background:var(--del-bg);color:var(--del);border-color:transparent;text-decoration:line-through}
+table.contract{border-collapse:collapse;font-size:.9rem;margin:.3rem 0}
+table.contract td{padding:.2rem .6rem .2rem 0;vertical-align:top}
+table.contract td:first-child{color:var(--mute);white-space:nowrap}
+table.contract tr.add td{background:var(--add-bg)}
+table.contract tr.del td{background:var(--del-bg);text-decoration:line-through}
+.blk-blast .col,.blk-flow .col{margin-bottom:.4rem}
+ul.ids{margin:0;padding-left:1.1rem}
+.mute{color:var(--mute)}
+.docs{color:var(--mute);font-size:.9rem;margin:.5rem 0 0}
+table.blk-files{border-collapse:collapse;width:100%}
+table.blk-files td{padding:.3rem .6rem .3rem 0;border-top:1px dashed var(--line)}
+table.blk-files tr:first-child td{border-top:0}
