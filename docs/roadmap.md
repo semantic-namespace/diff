@@ -2,15 +2,15 @@
 
 ## The MVP in one sentence
 
-On any yorba-clj or atlas pull request, a reviewer gets the structural report
+On any pull request of a Clojure repository, a reviewer gets the structural report
 without cloning anything, writes notes against form paths (alone or with an
 LLM), and posts them as a real GitHub review, with no permissions beyond the
 ones GitHub already gave them.
 
 ## Done when
 
-- The report runs on every yorba-clj and atlas PR automatically.
-- Five consecutive yorba-clj PRs were reviewed from the report, and at least one
+- The report is available on demand for any PR the reviewer can read.
+- Five consecutive PRs of a production application were reviewed from the report, and at least one
   review was posted through `sdiff review`.
 - No PR in that run produced a pairing the reviewer had to correct by reading
   the raw diff.
@@ -31,8 +31,8 @@ server. The remote server is the next milestone, replacing M4.
 ### M1. Pairing gaps that real PRs hit
 
 - Pair top-level forms whose identity changed but whose body survived, by
-  shared-subtree similarity. Seen in yorba #2555, where every
-  `services.data/def` became `s.atlas/bind` and shows as remove plus add.
+  shared-subtree similarity. Seen when every call to one registration macro is
+  replaced by another with a new name: each shows as a remove plus an add.
 - Every change carries its head-side line range in the EDN, including deleted
   forms, anchored to the enclosing form.
 - Fixture: an atlas PR or an inline case with a renamed top-level form.
@@ -64,17 +64,18 @@ server. The remote server is the next milestone, replacing M4.
 
 ### M4 (original, dropped from the MVP). Report on every PR
 
-- A GitHub Action, first in atlas (public, no secrets), then in yorba-clj.
+- A GitHub Action, first in atlas (public, no secrets), then in private repos.
 - Job summary gets the text report, the Checks API gets one annotation per
   changed form on its head line (batched at 50), the HTML page is a run artifact.
-- yorba-clj needs a read token for this private repo. That workflow file and
-  secret need an explicit go-ahead.
+- A private consumer repo needs its own workflow file and token, set up by
+  its owners.
 
 ### M5. Wire the consumers
 
 - atlas `atlas-review-branch`: `semantic.clj` maps hunks to entities through
   form paths from the EDN report instead of line-range overlap.
-- yorba `atlas-pr-review`: the structural report sits beside the registry diff.
+- Project review skills downstream: the structural report sits beside the
+  registry diff.
 
 ## After the MVP
 
