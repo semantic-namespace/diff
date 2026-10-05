@@ -41,6 +41,12 @@
 (defn- html-response [s] {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body s})
 (defn- json-response [status m] {:status status :headers {"Content-Type" "application/json"} :body (json/generate-string m)})
 
+(defn- authorized [req f]
+  (if (not= token (get-in req [:headers "x-sdiff-token"]))
+    (json-response 403 {:error "missing or wrong token; reload the page"})
+    (try (f (json/parse-string (slurp (:body req)) true))
+         (catch Exception e (json-response 400 {:error (ex-message e)})))))
+
 (defn- index-page []
   (str "<!doctype html>"
        (hc/html
@@ -71,6 +77,10 @@
              [(form-key (:path f) (:id fm))
               {:fp (fingerprint f fm) :was (when (:was fm) (form-key (:path f) (:was fm)))}])))
 
+(defn- page-config [r]
+  (let [{:keys [repo num url author]} (:pr r)]
+    {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
+
 (defn- pr-page [ref]
   (let [r (github/cached-report ref)
         {:keys [repo num url author]} (:pr r)
@@ -79,10 +89,6 @@
                :extra-head [:style (hc/raw (resource "review.css"))]
                :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
                                  [:script (hc/raw (resource "review.js"))]))))
-
-(defn- page-config [r]
-  (let [{:keys [repo num url author]} (:pr r)]
-    {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
 
 (defn- review-page [ref]
   (let [{:keys [repo num]} (github/parse-pr ref)]
@@ -124,12 +130,6 @@
             {:keys [pr-id]} (github/viewed pr)]
         (json-response 200 {:path path :state (github/set-viewed! pr-id path (boolean viewed))}))
       (catch Exception e (json-response 400 {:error (ex-message e)})))))
-
-(defn- authorized [req f]
-  (if (not= token (get-in req [:headers "x-sdiff-token"]))
-    (json-response 403 {:error "missing or wrong token; reload the page"})
-    (try (f (json/parse-string (slurp (:body req)) true))
-         (catch Exception e (json-response 400 {:error (ex-message e)})))))
 
 (defn- state-get [req]
   (let [{:keys [repo num]} (github/parse-pr (query-param req "ref"))]
