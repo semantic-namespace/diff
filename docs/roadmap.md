@@ -20,8 +20,9 @@ ones GitHub already gave them.
 Done: form-level diff, file verdicts, moves, extraction with drift and renamed
 locals, rename roll-up across files, text / edn / html output, merge-base
 ranges. M2 and M3 below. A local MCP server (stdio, plumcp 0.3.0) with
-`structural-diff`, `review-draft` and `post-review`. 15 tests over atlas PRs
-#7, #4 and #2. Posting a review has not been exercised against GitHub yet.
+`structural-diff`, `review-draft` and `post-review`. Tests over atlas PRs
+#7, #4 and #2. Posting works: the first real review was posted through the MCP
+tool on 2026-10-05.
 
 CI on every PR is dropped from the MVP: reviews are on demand, through the MCP
 server. The remote server is the next milestone, replacing M4.
