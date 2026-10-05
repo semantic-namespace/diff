@@ -19,7 +19,7 @@
             [sdiff.github :as github]
             [sdiff.render.html :as html]
             [sdiff.review :as review]
-            [sdiff.doc :as doc]
+            [sdiff.decorate :as decorate]
             [sdiff.state :as state]))
 
 (def token (str (random-uuid)))
@@ -83,28 +83,24 @@
 
 (defn- pr-page [ref]
   (let [r (github/cached-report ref)
-        {:keys [repo num url author]} (:pr r)
-        config (page-config r)]
-    (html/page (str "https://github.com/" repo) repo [r]
-               :extra-head [:style (hc/raw (resource "review.css"))]
-               :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
-                                 [:script (hc/raw (resource "review.js"))]))))
+        {:keys [repo num]} (:pr r)
+        config (page-config r)
+        ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
+    (binding [decorate/*ctx* ctx]
+      (html/page (str "https://github.com/" repo) repo [r]
+                 :extra-head [:style (hc/raw (resource "review.css"))]
+                 :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
+                                   [:script (hc/raw (resource "review.js"))])))))
 
-(defn- review-page [ref]
-  (let [{:keys [repo num]} (github/parse-pr ref)]
-    (if-let [d (state/page repo num)]
-      (let [r (github/cached-report ref)]
-        (doc/page d r (doc/context d r) :config (page-config r)))
-      (str "<!doctype html><meta charset=utf-8><p>No review page for " repo "#" num " yet. Write one with the review-page MCP tool or POST /review-page.</p>"))))
-
-(defn- review-page-post [req]
-  (authorized req (fn [{:keys [pr document]}]
+(defn- annotate-post [req]
+  (authorized req (fn [{:keys [pr annotations]}]
                     (let [{:keys [repo num]} (github/parse-pr pr)
-                          d (if (string? document) (clojure.edn/read-string document) document)
                           r (github/cached-report pr)
-                          problems (doc/validate d (doc/context d r))]
-                      (state/save-page! repo num d)
-                      (json-response 200 {:url (str "/review?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8")) :problems problems})))))
+                          ctx (@decorate/context-fn r)
+                          anns (vec (for [a annotations] (update a :on #(if (map? %) (update-keys % keyword) %))))
+                          problems (vec (keep (fn [a] (when-let [p (decorate/validate-ref ctx (:on a))] {:on (:on a) :problem p})) anns))]
+                      (state/save-review! repo num {:annotations anns})
+                      (json-response 200 {:url (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8")) :problems problems})))))
 
 (defn- review-call [req post?]
   (if (not= token (get-in req [:headers "x-sdiff-token"]))
@@ -153,8 +149,7 @@
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
       [:post "/viewed"] (viewed-call req)
-      [:get "/review"] (if-let [ref (query-param req "ref")] (html-response (review-page ref)) {:status 302 :headers {"Location" "/"}})
-      [:post "/review-page"] (review-page-post req)
+      [:post "/annotate"] (annotate-post req)
       [:get "/state"]  (state-get req)
       [:post "/state"] (state-post req)
       [:post "/settings"] (settings-post req)

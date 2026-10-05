@@ -6,7 +6,8 @@
             [clojure.string :as str]))
 
 (def default-settings
-  {:fold-viewed-forms true
+  {:show-inferred true
+   :fold-viewed-forms true
    :fold-viewed-files true
    :mark-file-on-github false
    :fold-cosmetic-files false})
@@ -36,17 +37,12 @@
   (let [[owner name] (str/split repo #"/")]
     (io/file (dir) "reviews" owner name (str num ".edn"))))
 
-(def empty-review {:forms {} :notes [] :verdict "comment" :summary ""})
+(def empty-review {:forms {} :notes [] :verdict "comment" :summary "" :annotations []})
 
 (defn review [repo num] (read-edn (review-file repo num) empty-review))
 
-(defn save-review! [repo num m]
-  (write-edn! (review-file repo num) (merge empty-review (select-keys m (keys empty-review)))))
-
-(defn- page-file [repo num]
-  (let [[owner name] (str/split repo #"/")]
-    (io/file (dir) "reviews" owner name (str num ".page.edn"))))
-
-(defn page [repo num] (let [f (page-file repo num)] (when (.exists f) (edn/read-string (slurp f)))))
-
-(defn save-page! [repo num doc] (write-edn! (page-file repo num) doc))
+(defn save-review!
+  "Merges `m` into the stored review, so the panel's save keeps annotations and
+  an annotate call keeps notes."
+  [repo num m]
+  (write-edn! (review-file repo num) (merge (review repo num) (select-keys m (keys empty-review)))))

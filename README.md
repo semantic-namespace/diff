@@ -94,31 +94,23 @@ formatting, comments or names.
 VPN address. Anyone who can reach that address can then read PRs and post
 reviews as you.
 
-## Review pages
+## Derived and inferred
 
-A review page is a walk through a pull request in steps, each a claim backed by
-blocks the server renders. The document is data, written by a reviewer or a
-model; the blocks come from the report, so the facts on the page are
-tool-derived and a reference that does not resolve shows as a problem:
-
-```clojure
-{:intro "One paragraph on what the PR means."
- :steps [{:title "The cap travels with the model"
-          :claim "`predict` reads the window from the model map."
-          :blocks [[:diff/form "src/scorer.clj" "defn predict"] [:diff/files] [:text "…"]]}]}
-```
-
-`POST /review-page` on the server stores it, `GET /review?ref=…` renders it with
-the review panel, and the `review-page` MCP tool does the POST for you. The
-block kinds here are `:diff/form`, `:diff/files` and `:text`; a host with a
-registry adds its own with `defmethod sdiff.blocks/render` and
-`sdiff.doc/use-context!`. The atlas `review` module does that for atlas
-registries.
+Everything on the page is one of two kinds, and labelled. **Derived** content
+comes from a tool named on the label: the structural changes from sdiff, and
+whatever decorations a host registers beside each changed form or at the top
+of the page (`sdiff.decorate/add-form-decorator!`, `add-header-decorator!`,
+`use-context!`). The atlas `review` module registers decorations from a
+registry: the entity a form declares with its contract delta, who depends on
+it, which data keys it mentions. **Inferred** content is an annotation a
+reviewer or a model attached to a form, an entity or the page, with its author
+and the derived facts it rests on. `POST /annotate` stores them, the `annotate`
+MCP tool posts them for you, and a panel setting hides the inferred layer.
 
 ## MCP server
 
 The same operations as MCP tools (`structural-diff`, `review-draft`,
-`post-review`, `review-page`), over stdio, on the JVM (plumcp does
+`post-review`, `annotate`), over stdio, on the JVM (plumcp does
 not run on babashka). `post-review` is annotated as a destructive write, so clients ask before calling it.
 It acts with the `gh` credentials of whoever runs it.
 

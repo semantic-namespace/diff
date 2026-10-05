@@ -44,3 +44,28 @@ details.other li{display:flex;gap:.6rem;align-items:center}
 .sd-settings{font-size:.85rem}
 .sd-settings label{display:flex;gap:.4rem;align-items:flex-start;margin:.3rem 0;color:var(--ink)}
 .sd-settings label input{margin-top:.2rem}
+.deco{border:1px solid var(--line);border-left-width:4px;border-radius:6px;padding:.5rem .8rem;margin:.5rem 0;font-size:.9rem}
+.deco.derived{border-left-color:var(--sem)}
+.deco.inferred{border-left-color:var(--ext);background:var(--ext-bg)}
+.deco.deco-problem{border-color:var(--del);color:var(--del);background:var(--del-bg)}
+.prov{display:inline-block;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;color:var(--mute);margin-bottom:.3rem}
+.deco.inferred .prov{color:var(--ext)}
+.legend .prov{text-transform:uppercase;font-size:.72rem;border:1px solid var(--line);border-radius:4px;padding:0 .35rem;margin:0}
+.legend .legend-derived{border-left:3px solid var(--sem)}
+.legend .legend-inferred{border-left:3px solid var(--ext);background:var(--ext-bg)}
+.deco p{margin:.2rem 0}
+.deco .basis{color:var(--mute);font-size:.8rem}
+.deco h5{font-size:.78rem;font-weight:500;color:var(--mute);margin:.5rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em}
+.ent{background:var(--ren-bg);color:var(--ren);border-radius:3px;padding:0 .3rem}
+.aspects{display:flex;flex-wrap:wrap;gap:.3rem;margin:.3rem 0}
+.aspect{font-size:.75rem;border:1px solid var(--line);border-radius:999px;padding:.02rem .45rem;color:var(--mute)}
+.aspect.add{background:var(--add-bg);color:var(--add);border-color:transparent}
+.aspect.del{background:var(--del-bg);color:var(--del);border-color:transparent;text-decoration:line-through}
+table.contract{border-collapse:collapse;font-size:.85rem;margin:.2rem 0}
+table.contract td{padding:.15rem .6rem .15rem 0;vertical-align:top}
+table.contract td:first-child{color:var(--mute);white-space:nowrap}
+table.contract tr.add td{background:var(--add-bg)}
+table.contract tr.del td{background:var(--del-bg);text-decoration:line-through}
+ul.ids{margin:0;padding-left:1.1rem}
+.mute{color:var(--mute)}
+.sd-hide-inferred .deco.inferred{display:none}

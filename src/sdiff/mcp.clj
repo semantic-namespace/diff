@@ -105,31 +105,29 @@
       (throw (ex-info "no review server is running: start `bb sdiff serve` or the atlas review server" {})))))
 
 (defn ^{:mcp-type :tool
-        :mcp-annotations (eg/make-tool-annotations :title "Write a review page" :read-only-hint? false :destructive-hint? false :idempotent-hint? true)}
-  review-page
-  "Write the review page for a pull request: a walk in steps, each a claim backed
-  by blocks the review server renders from the structural report and, when the
-  server has a registry, the atlas registry. Replaces any earlier page for the
-  PR; nothing is sent to GitHub. `document` is EDN:
-  {:intro \"…\" :steps [{:title \"…\" :claim \"…\" :blocks [[:diff/form \"path\" \"defn x\"] [:diff/files] [:text \"…\"]
-  [:atlas/contract :fn.x/y] [:atlas/blast-radius :fn.x/y] [:atlas/data-flow :key/name]]}]
-  :registry {…what the server's atlas blocks need…}}.
-  Returns the page URL and every block the server cannot render, so fix those
-  and call again."
+        :mcp-annotations (eg/make-tool-annotations :title "Annotate the review page" :read-only-hint? false :destructive-hint? false :idempotent-hint? true)}
+  annotate
+  "Attach inferred notes to the review page of a pull request, replacing the
+  page's current annotations. Nothing is sent to GitHub. Each annotation:
+  {\"on\": {\"file\": path, \"form\": \"defn x\"} | {\"entity\": \":fn.x/y\"} | \"page\",
+   \"text\": \"…\", \"basis\": [\"what derived facts it rests on\"], \"author\": \"claude\"}.
+  The page shows them labelled inferred, apart from the derived decorations.
+  Returns the page URL and every annotation whose target does not resolve."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
-           ^{:doc "The review document, as EDN" :type "string"} document]}]
+           ^{:doc "JSON array of annotations" :type "array"} annotations]}]
   (let [{:keys [url token]} (ui-server)
-        {:keys [status body]} (http/post (str url "review-page")
+        anns (mapv #(merge {:author "claude" :kind "inferred"} (update-keys % keyword)) annotations)
+        {:keys [status body]} (http/post (str url "annotate")
                                          {:headers {"content-type" "application/json" "x-sdiff-token" token}
-                                          :body (json/generate-string {:pr pr :document document})
+                                          :body (json/generate-string {:pr pr :annotations anns})
                                           :throw false})
         res (json/parse-string body true)]
     (when (not= 200 status) (throw (ex-info (str "review server: " (or (:error res) status)) {})))
     (text-result (str url (subs (:url res) 1)
                       (if (seq (:problems res))
-                        (str "\n\n" (count (:problems res)) " block(s) will render as problems:\n"
-                             (str/join "\n" (for [{:keys [step block problem]} (:problems res)] (str "  step " step " " (pr-str block) ": " problem))))
-                        "\n\nall blocks resolved")))))
+                        (str "\n\n" (count (:problems res)) " annotation(s) do not resolve:\n"
+                             (str/join "\n" (for [{:keys [on problem]} (:problems res)] (str "  " (pr-str on) ": " problem))))
+                        "\n\nall annotations resolved")))))
 
 (def instructions
   "Structural review of Clojure pull requests. Call structural-diff first and
@@ -143,6 +141,6 @@
   (ms/run-mcp-server {:traffic-logger (if (System/getenv "SDIFF_MCP_DEBUG") stl/compact-server-traffic-logger stl/nop-traffic-logger)
                       :info (es/make-info "sdiff" "0.1.0" "Structural review of Clojure pull requests")
                       :instructions instructions
-                      :vars [#'structural-diff #'review-draft #'post-review #'review-page]
+                      :vars [#'structural-diff #'review-draft #'post-review #'annotate]
                       :transport :stdio
                       :print-banner? false}))

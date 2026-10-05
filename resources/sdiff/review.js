@@ -1,7 +1,7 @@
 (async () => {
   const cfg = JSON.parse(document.getElementById('sdiff-config').textContent);
   const remote = await fetch('/state?ref=' + encodeURIComponent(cfg.ref)).then(r => r.json()).catch(() => ({}));
-  const settings = Object.assign({ 'fold-viewed-forms': true, 'fold-viewed-files': true, 'mark-file-on-github': false, 'fold-cosmetic-files': false }, remote.settings);
+  const settings = Object.assign({ 'show-inferred': true, 'fold-viewed-forms': true, 'fold-viewed-files': true, 'mark-file-on-github': false, 'fold-cosmetic-files': false }, remote.settings);
   const state = Object.assign({ forms: {}, notes: [], verdict: 'comment', summary: '' }, remote.review);
   const legacyKey = 'sdiff:' + cfg.ref + ':' + cfg.head;
   try {
@@ -146,6 +146,7 @@
     renderForm(k);
   });
   function applyFolds() {
+    document.body.classList.toggle('sd-hide-inferred', !settings['show-inferred']);
     if (settings['fold-viewed-forms']) Object.entries(formBoxes).forEach(([k, b]) => { if (formStatus(k) === 'viewed') b.sec.classList.add('sd-folded'); });
     if (settings['fold-cosmetic-files']) allOf('article.file.comments-only, article.file.whitespace-only, article.file.rename-only').forEach(a => a.classList.add('sd-folded'));
   }
@@ -167,7 +168,8 @@
       el('p', { class: 'sd-hint' }, 'Click a file or form heading to fold it. Alt+click folds or unfolds every one at that level, and Alt+click on a source toggle opens or closes them all.'),
       el('label', {}, 'Verdict ', verdict), summary, list,
       el('details', { class: 'sd-settings' }, el('summary', {}, 'Settings'),
-        ...[['fold-viewed-forms', 'Fold forms I mark viewed'],
+        ...[['show-inferred', 'Show inferred notes'],
+            ['fold-viewed-forms', 'Fold forms I mark viewed'],
             ['fold-viewed-files', 'Fold files viewed on GitHub'],
             ['mark-file-on-github', 'Mark a file viewed on GitHub when all its forms are viewed'],
             ['fold-cosmetic-files', 'Fold files that only change formatting, comments or names']].map(([k, label]) => {

@@ -6,7 +6,8 @@
   (:require [rewrite-clj.node :as n]
             [clojure.string :as str]
             [hiccup2.core :as hc]
-            [sdiff.core :refer [fmt-path head short index]]))
+            [sdiff.core :refer [fmt-path head short index]]
+            [sdiff.decorate :as decorate]))
 
 (defn- offsets [src]
   (let [starts (reductions + 0 (map #(inc (count %)) (str/split src #"\n" -1)))]
@@ -80,7 +81,7 @@
         full? (#{:added-form :removed-form} op0)
         node-old (when-not (= op0 :added-form) (get (index old) (or was id)))
         node-new (when-not (= op0 :removed-form) (get (index new) id))]
-    [:section.form {:data-file path :data-form (str/join " " (remove nil? (map str id)))}
+    [:section.form {:id (decorate/anchor {:path path} {:id id}) :data-file path :data-form (str/join " " (remove nil? (map str id)))}
      [:h3 [:code (str/join " " (map str id))]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
       (when was [:span.tag.tag-note (str "was " (str/join " " (remove nil? (map str was))))])
@@ -95,6 +96,8 @@
           [:p "Locals renamed: " (interpose ", " (for [[o nw] (:renamed extraction)] [:span [:code o] " → " [:code nw]]))])
         [:p (if (seq (:drift extraction)) "Compared with the expression it replaced, the new body differs in:" "The body is the replaced expression, unchanged.")]
         [:ul.changes (map change-row (:drift extraction))]])
+     (decorate/form-decorations {:path path} {:id id})
+     (decorate/form-annotations {:path path} {:id id})
      [:details {:open (boolean full?)}
       [:summary (if full? "source" "whole form, changes marked")]
       [:div.sbs {:class (when full? "single")}
@@ -118,7 +121,7 @@
       [:ul (for [f forms] [:li [:code (str/join " " (map str (:id f)))]
                            (for [c (:changes f) :when (:rename c)] [:span.where (str " — " (fmt-path (:path c)))])])]])])
 
-(defn- pr-view [gh-url {:keys [num title clj other renames]}]
+(defn- pr-view [gh-url {:keys [num title clj other renames] :as r}]
   (let [counts (frequencies (map :verdict clj))]
     [:section.pr {:id (str "pr-" num)}
      [:header
@@ -129,7 +132,9 @@
        (when (seq other) (str "; " (count other) " other file" (when (not= 1 (count other)) "s")))]
       (when (seq renames)
         [:ul.renames (for [{:keys [from to count]} renames]
-                       [:li "rename " [:code from] " → " [:code to] [:span.n (str count " sites across the PR")]])])]
+                       [:li "rename " [:code from] " → " [:code to] [:span.n (str count " sites across the PR")]])])
+      (map decorate/render-annotation (decorate/annotations-on decorate/*ctx* "page"))
+      (decorate/header r)]
      (map (partial file-view gh-url num) (sort-by (comp verdict-order :verdict) clj))
      (when (seq other)
        [:details.other [:summary (str (count other) " non-Clojure files" (when gh-url ", shown by GitHub"))]
@@ -159,7 +164,8 @@
            [:div.intro
             [:h1 "What changed, by form"]
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
-             ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]]
+             ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]
+            [:p.legend [:span.prov.legend-derived "derived"] " comes from a tool, named on the label. " [:span.prov.legend-inferred "inferred"] " is a reviewer's or a model's reading of it, with the derived facts it rests on."]]
            [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
            (map (partial pr-view gh-url) prs)]
           extra-body]])))
