@@ -36,7 +36,7 @@
   "The changed form of `report` that holds `row` of `path`, as `[path form-id]`."
   [report]
   (let [s (spans report)]
-    (fn [path row] (some (fn [[r e k]] (when (<= r row e) k)) (get s path)))))
+    (fn [path row] (when row (some (fn [[r e k]] (when (<= r row (or e r)) k)) (get s path))))))
 
 (defn call-edges
   "Pairs of changed forms where one calls a var the other defines."
