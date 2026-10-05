@@ -23,6 +23,21 @@ which locals were renamed. A form that changed visibility, was wrapped by a new
 macro, or was renamed and rewritten shows as one change (`⇠ was …`), not as a
 removal and an addition.
 
+## What it looks like
+
+The report page of a pull request of
+[semantic-namespace/atlas](https://github.com/semantic-namespace/atlas/pull/7):
+files by verdict, each changed form with its changes named by path, a comment
+button and a Viewed tick per form, the review panel at the bottom right.
+
+![The report page](docs/img/report.png)
+
+A view over the same pull request, composed by a reviewer or a model: sections
+with a claim each, the forms and changes they rest on, and everything else
+folded at the end.
+
+![A view](docs/img/view.png)
+
 ## Use
 
 Babashka, no install beyond the repo:
