@@ -39,6 +39,37 @@
                           :let [[s e] r] :when (and (>= s fs) (<= e fe))] [s e cls]))]
     (render-ranges src fs fe rs)))
 
+(defn- excerpt
+  "The changed lines of `form` with `context` lines around each cluster, or nil
+  when the excerpt would not be noticeably shorter than the whole form. Marks
+  crossing a window's edge lose their highlight, never their text."
+  [src form marks context]
+  (let [lines (str/split src #"\n" -1)
+        off (offsets src)
+        {fr :row fer :end-row} (meta form)
+        [fs fe] (range-of off form)
+        changed (sort (for [[node cls] marks :when (not= cls "kept") :let [{:keys [row end-row]} (meta node)] :when row] [row end-row]))
+        clusters (reduce (fn [acc [r e]]
+                           (let [[pr pe] (peek acc)]
+                             (if (and pe (<= r (+ pe 1 (* 2 context)))) (conj (pop acc) [pr (max pe e)]) (conj acc [r e]))))
+                         [] changed)
+        windows (for [[r e] clusters] [(max fr (- r context)) (min fer (+ e context))])
+        shown (reduce + (map (fn [[a b]] (inc (- b a))) windows))]
+    (when (and fr (seq windows) (<= (+ shown 4) (inc (- fer fr))))
+      (let [rs (sort-by (fn [[s e]] [s (- e)])
+                        (for [[node cls] marks :let [r (range-of off node)] :when r] (conj r cls)))]
+        (->> (for [[[a b] prev-end] (map vector windows (cons (dec fr) (map second windows)))
+                   :let [ws (max fs (off a 1)) we (min fe (+ (off b 1) (count (nth lines (dec b)))))
+                         inner (filter (fn [[s e]] (and (>= s ws) (<= e we))) rs)
+                         gap (- a prev-end 1)]]
+               [(when (pos? gap) [:span.elided (str "⋮ " gap " line" (when (> gap 1) "s") "\n")])
+                (seq (render-ranges src ws we inner)) "\n"])
+             (apply concat)
+             (remove nil?)
+             (vec)
+             (#(let [below (- fer (second (last windows)))]
+                 (cond-> % (pos? below) (conj [:span.elided (str "⋮ " below " line" (when (> below 1) "s"))])))))))))
+
 (defn- marks-for [side changes]
   (concat
    (for [{:keys [op old new rename extracted]} changes
@@ -99,11 +130,18 @@
         [:ul.changes (map change-row (:drift extraction))]])
      (decorate/form-decorations {:path path} {:id id})
      (decorate/form-annotations {:path path} {:id id})
-     [:details {:open (boolean full?)}
-      [:summary (if full? "source" "whole form, changes marked")]
-      [:div.sbs {:class (when full? "single")}
-       (when node-old [:pre.code (seq (highlighted old node-old (marks-for :old changes)))])
-       (when node-new [:pre.code (seq (highlighted new node-new (marks-for :new changes)))])]]]))
+     (let [ex-old (when (and node-old (not full?)) (excerpt old node-old (marks-for :old changes) 2))
+           ex-new (when (and node-new (not full?)) (excerpt new node-new (marks-for :new changes) 2))]
+       (list
+        (when (and ex-old ex-new)
+          [:div.sbs.excerpt
+           [:pre.code (seq ex-old)]
+           [:pre.code (seq ex-new)]])
+        [:details {:open (boolean full?)}
+         [:summary (cond full? "source" (and ex-old ex-new) "whole form" :else "whole form, changes marked")]
+         [:div.sbs {:class (when full? "single")}
+          (when node-old [:pre.code (seq (highlighted old node-old (marks-for :old changes)))])
+          (when node-new [:pre.code (seq (highlighted new node-new (marks-for :new changes)))])]]))]))
 
 (def verdict-label {:semantic "changes behaviour" :rename-only "rename only" :comments-only "comments only" :whitespace-only "formatting only"})
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
