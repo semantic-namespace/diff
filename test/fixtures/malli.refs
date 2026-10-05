@@ -1,0 +1,3 @@
+1315|e878083f385f35669eb2024366800e438d1aee49|97e60433a72bfdf9154e15bfb6e28458a0aadbec|improve clj-kondo generated types
+1313|e0240dc1fd1cb2a63e0a04528eb4e82b68ce8c8c|f234340bddf305d96d62c443a490043957c421a8|Fix humanize with -resolve-root-error on :or of closed :maps
+1301|a74e3b45efa30b3bcdb2e997f337c71614eba3c5|88e8a6de36139bc5e80ac5dcc95ad9f2067055aa|Close #1035 Fix :> / :< generators producing values that violate the schema
