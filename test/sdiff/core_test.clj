@@ -137,3 +137,40 @@
     (is (str/starts-with? (get-in f [:new :src]) "(defn compile!"))
     (is (every? pos-int? (map #(get-in f [:new %]) [:row :end-row])) "the head-side form carries its line range")
     (is (some #(= "(dev-id-conflicts entries)" (get-in % [:new :src])) (:changes f)))))
+
+(deftest pairing-a-form-made-public
+  (let [r (c/file-report "p.clj" "(defn- f [x] (inc x))" "(defn f [x] (inc x))")
+        [f & more] (:forms r)]
+    (is (nil? more) "one entry, not a removal and an addition")
+    (is (= ["defn" "f"] (:id f)))
+    (is (= ["defn-" "f"] (:was f)))
+    (is (= [{:op :visibility :path [] :from "private" :to "public"}] (:changes f)))))
+
+(deftest pairing-a-form-wrapped-by-a-new-macro
+  (let [old "(data/def :a/key {:type :user :pseudo (fn [x] (encrypt x))})"
+        new "(bind :data.a/key #{:domain/a} (data/def :a/key {:type :user :pseudo (fn [x] (encrypt x))}))"
+        [f] (:forms (c/file-report "w.clj" old new))]
+    (is (= ["bind" ":data.a/key"] (:id f)))
+    (is (= ["data/def" ":a/key"] (:was f)))
+    (is (= [:wrapped] (mapv :op (:changes f))))))
+
+(deftest pairing-a-form-renamed-and-rewritten
+  (let [old "(register! :fn/old {:context [:a :b] :response [:c] :impl (fn [{:keys [a b]}] (+ a b))})"
+        new "(register! :fn/new {:context [:a :b] :response [:c :d] :impl (fn [{:keys [a b]}] (+ a b))})"
+        [f & more] (:forms (c/file-report "r.clj" old new))]
+    (is (nil? more))
+    (is (= ["register!" ":fn/old"] (:was f)))
+    (is (some #(= [["name"]] (:path %)) (:changes f)) "the name change is its own row")))
+
+(deftest unrelated-forms-stay-apart
+  (let [r (c/file-report "u.clj" "(defn a [x] (str \"a\" x))" "(defn b [m] (reduce-kv assoc {} m))")]
+    (is (= #{[:removed-form] [:added-form]} (set (map #(mapv :op (:changes %)) (:forms r)))))))
+
+(deftest a-single-arity-gaining-an-arity
+  (let [old "(defn f [{:keys [a b]}] (concat (map str a) (map str b)))"
+        new "(defn f ([m] (f nil m)) ([cap {:keys [a b]}] (let [b (if cap (take cap b) b)] (concat (map str a) (map str b)))))"
+        f (first (:forms (c/file-report "a.clj" old new)))
+        paths (set (map :path (:changes f)))]
+    (is (contains? paths [["arity" 1]]) "the delegating arity is the new piece")
+    (is (some #(= ["arity" 2] (first %)) paths) "the old body is diffed inside the 2-arity")
+    (is (not-any? #(= [["body"]] %) paths) "no stray removal of the old body")))

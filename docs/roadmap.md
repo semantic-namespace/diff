@@ -28,7 +28,15 @@ server. The remote server is the next milestone, replacing M4.
 
 ## Milestones
 
-### M1. Pairing gaps that real PRs hit
+### M1. Pairing gaps that real PRs hit (done)
+
+Forms that lost their identity pair by name, then by similarity (shared
+subtrees and token overlap, at least one half): visibility changes, a form
+wrapped by a new macro, a definition renamed and rewritten. A single-arity
+function that gains arities is diffed against its closest arity. Checked on 25
+merges of a production application: every pairing was a real rename or
+rewrite.
+
 
 - Pair top-level forms whose identity changed but whose body survived, by
   shared-subtree similarity. Seen when every call to one registration macro is

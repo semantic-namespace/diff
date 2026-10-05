@@ -25,10 +25,10 @@
     true (update :drift #(mapv change->edn %))
     kept (assoc :kept (pair->edn kept))))
 
-(defn form->edn [{:keys [old new]} {:keys [id changes extraction] :as f}]
+(defn form->edn [{:keys [old new]} {:keys [id was changes extraction] :as f}]
   (let [op0 (:op (first changes))]
     (cond-> (assoc f :changes (mapv change->edn changes))
-      (not= op0 :added-form)   (assoc :old (node->edn (get (core/index old) id)))
+      (not= op0 :added-form)   (assoc :old (node->edn (get (core/index old) (or was id))))
       (not= op0 :removed-form) (assoc :new (node->edn (get (core/index new) id)))
       extraction (assoc :extraction (extraction->edn extraction)))))
 

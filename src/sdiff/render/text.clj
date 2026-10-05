@@ -9,8 +9,9 @@
 
 (defn print-file [{:keys [path verdict forms status]}]
   (println (str "\n■ " path "   [" (name verdict) (case status "A" ", new file" "D" ", deleted" "") "]"))
-  (doseq [{:keys [id changes extraction note]} forms]
+  (doseq [{:keys [id was changes extraction note]} forms]
     (println (str "  " (str/join " " (map str id))
+                  (when was (str "   ⇠ was " (str/join " " (map str was))))
                   (when note (str "   ⚠ " note))
                   (when extraction (str "   ⇠ extracted from " (fmt-path (cons (str/join " " (map str (:from extraction))) (:from-path extraction)))))))
     (doseq [{:keys [op path old new extracted rename] :as c} changes]
@@ -20,6 +21,8 @@
                    :removed-form "    - form removed"
                    :wrapper      (str "    ~ wrapper " (name (n/tag old)) " → " (name (n/tag new)))
                    :comments     (str "    # " p "comments/docstring only")
+                   :visibility   (str "    ~ visibility " (:from c) " → " (:to c))
+                   :wrapped      (str "    ~ now wrapped in " (or (head new) (name (n/tag new))) "; the old form is inside it unchanged")
                    :added        (str "    + " p "= " (short (n/string new))
                                       (when-let [f (:moved-from c)] (str "\n        ⇠ holds " (kept-list (:kept c)) " from " (fmt-path f))))
                    :removed      (str "    - " p "= " (short (n/string old)))

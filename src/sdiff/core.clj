@@ -251,6 +251,24 @@
             (for [i extra-old] {:op :removed :path (conj path (step (xs i) i)) :old (xs i)})
             (for [j extra-new] {:op :added :path (conj path (step (ys j) j)) :new (ys j)}))))
 
+(declare similarity)
+
+(defn arity-ids
+  "`children-ids` of a definition, except that a single-arity side compared with
+  a multi-arity `other` becomes one arity, keyed like the arity of `other` it is
+  most similar to. Adding an arity then reads as one arity added and the old
+  body diffed against the arity that carries it on."
+  [node other]
+  (let [ids (children-ids node) oids (children-ids other)
+        multi? (fn [xs] (and (sequential? xs) (some #(= "arity" (ffirst %)) xs)))]
+    (if (and (sequential? ids) (not (multi? ids)) (multi? oids))
+      (let [argv (first (filter #(= :vector (n/tag %)) (kids node)))
+            i (.indexOf ^java.util.List (kids node) argv)
+            synth (n/list-node (subvec (kids node) i))
+            [best-id] (apply max-key #(similarity synth (second %)) oids)]
+        [[best-id synth]])
+      ids)))
+
 (defn diff
   "Changes between nodes `a` and `b` under `path`. Argument vectors pair by
   position so a renamed parameter is one change, not a removal plus an addition;
@@ -270,7 +288,8 @@
         (vec (align path (map-indexed (fn [i k] [[(str "#" (inc i))] k]) (kids a))
                     (map-indexed (fn [i k] [[(str "#" (inc i))] k]) (kids b))))
         :else (vec (lcs-align path a b)))
-      (let [ida (children-ids a) idb (children-ids b)
+      (let [ida (if (defn-forms (head a)) (arity-ids a b) (children-ids a))
+            idb (if (defn-forms (head b)) (arity-ids b a) (children-ids b))
             dstr (fn [x] (let [[_ _ s] (kids x)] (when (and s (or (= :multi-line (n/tag s)) (str/starts-with? (n/string s) "\""))) s)))
             res (align path ida idb)
             res (if (and (defn-forms (head a)) (not= (some-> (dstr a) n/string) (some-> (dstr b) n/string)))
@@ -298,7 +317,80 @@
         pick (some #(when (= nargs (count (kids (first (kids %))))) %) bodies)]
     (if pick (last (kids pick)) (last (kids defn-node)))))
 
+
+(defn- strip-meta [node] (if (= :meta (n/tag node)) (recur (last (kids node))) node))
+
+(defn- form-name
+  "The defined name of a top-level form, without metadata, or nil."
+  [node]
+  (some-> (second (kids (unwrap node))) strip-meta n/string))
+
+(defn- private? [node]
+  (let [[hd nm] (kids (unwrap node))]
+    (boolean (or (= "defn-" (some-> hd n/string))
+                 (and nm (= :meta (n/tag nm)) (re-find #":private" (n/string nm)))))))
+
 (defn- tokens [x] (if (seq (kids x)) (mapcat tokens (kids x)) [(n/string x)]))
+
+(defn similarity
+  "How much of two forms is the same, from 0 to 1: the mean of the share of the
+  larger form's source kept verbatim in common subtrees, and the Dice overlap of
+  their leaf tokens. The first rewards surviving structure, the second the
+  keys and values that survive one by one in a rewritten map."
+  [a b]
+  (let [shared (reduce + (map #(count (n/string (first %))) (kept-subtrees a b)))
+        structure (/ (double shared) (max 1 (count (n/string a)) (count (n/string b))))
+        ta (frequencies (tokens a)) tb (frequencies (tokens b))
+        common (reduce + (map (fn [[t c]] (min c (get tb t 0))) ta))
+        dice (/ (* 2.0 common) (max 1 (+ (reduce + (vals ta)) (reduce + (vals tb)))))]
+    (/ (+ structure dice) 2)))
+
+(def ^:private pair-threshold 0.5)
+
+(defn pair-forms
+  "Pairs top-level forms that lost their identity between the two sides:
+  `{new-id old-id}`. A removed and an added form with the same name pair first
+  (a `defn-` that became `defn`, a def whose macro changed); the rest pair by
+  `similarity` of at least one half, best first, so a definition rewritten
+  under a new name and macro still reads as one change."
+  [ia ib removed added]
+  (let [by-name (group-by #(form-name (ia %)) removed)
+        named (into {} (for [nid added :let [nm (form-name (ib nid)) [oid] (get by-name nm)]
+                             :when (and nm oid)] [nid oid]))
+        removed (remove (set (vals named)) removed)
+        added (remove (set (keys named)) added)
+        scored (sort-by (comp - first)
+                        (for [oid removed nid added
+                              :let [sc (similarity (unwrap (ia oid)) (unwrap (ib nid)))]
+                              :when (>= sc pair-threshold)] [sc oid nid]))]
+    (first (reduce (fn [[acc used] [_ oid nid]]
+                     (if (or (used oid) (used nid)) [acc used] [(assoc acc nid oid) (conj used oid nid)]))
+                   [named #{}] scored))))
+
+(defn- drop-name [node] (n/list-node (cons (first (kids node)) (drop 2 (kids node)))))
+
+(defn paired-diff
+  "Changes between two top-level forms paired by `pair-forms`. When the old
+  form survives verbatim inside the new one, that is the whole story: it was
+  wrapped. Otherwise visibility, the defining operator, the name, then the body
+  by role (definitions) or by sequence (any other form)."
+  [a b]
+  (let [a (unwrap a) b (unwrap b)
+        [ha na] (kids a) [hb nb] (kids b)
+        inner (some #(when (and (not= % b) (= (h a) (h %))) %) (inner-nodes b))
+        defs? (and (defn-forms (head a)) (defn-forms (head b)))
+        same-family? (= (str/replace (str (head a)) #"-$" "") (str/replace (str (head b)) #"-$" ""))]
+    (if inner
+      [{:op :wrapped :path [] :old a :new b :kept [[a inner]]}]
+     (vec (concat
+          (when (not= (private? a) (private? b))
+            [{:op :visibility :path [] :from (if (private? a) "private" "public") :to (if (private? b) "private" "public")}])
+          (when-not same-family? [{:op :replaced :path [["head"]] :old ha :new hb}])
+          (when (and na nb (not= (n/string (strip-meta na)) (n/string (strip-meta nb))))
+            [{:op :replaced :path [["name"]] :old (strip-meta na) :new (strip-meta nb)}])
+          (if (and defs? same-family?)
+            (align [] (arity-ids a b) (arity-ids b a))
+            (link-moves [] (seq-align [] (drop-name a) (drop-name b)))))))))
 
 (defn file-report
   "Structural report for one file given its old and new source. Returns
@@ -309,25 +401,29 @@
   An extraction is detected when a replaced or reshaped expression calls, or passes as a
   value, a function new in this file whose body shares a subtree with the old
   expression, verbatim or modulo renamed locals. A form whose only changes are
-  in its argument vector is tagged signature-only."
+  in its argument vector is tagged signature-only. A removed and an added form
+  that `pair-forms` matches become one entry with `:was`, the old identity."
   [path old new]
   (let [ia (index old) ib (index new)
         ids (distinct (concat (keys ia) (keys ib)))
-        added (into {} (for [id ids :when (and (ib id) (not (ia id)))] [(second id) (ib id)]))
-        base (for [id ids :let [a (ia id) b (ib id)]]
+        was (pair-forms ia ib (filter #(not (ib %)) (keys ia)) (filter #(not (ia %)) (keys ib)))
+        paired-old (set (vals was))
+        added (into {} (for [id ids :when (and (ib id) (not (ia id)) (not (was id)))] [(second id) (ib id)]))
+        base (for [id ids :when (not (paired-old id)) :let [a (ia id) b (ib id)]]
                (cond (and a b) {:id id :changes (cond-> (vec (diff [] (unwrap a) (unwrap b)))
                                                   (not= (n/tag a) (n/tag b))
                                                   (conj {:op :wrapper :path [] :old a :new b}))}
+                     (was id) {:id id :was (was id) :changes (paired-diff (ia (was id)) b)}
                      a {:id id :changes [{:op :removed-form :old a}]}
                      :else {:id id :changes [{:op :added-form :new b}]}))
-        extractions (for [{:keys [id changes]} base
+        extractions (for [{:keys [id changes] :as fr} base
                           {:keys [op old new path]} changes
                           :let [fname (when (and (#{:replaced :reshaped} op) new) (first (filter added (tokens new))))
                                 f (when fname (added fname))]
                           :when f
                           :let [body (arity-body f (if (= (head new) fname) (dec (count (kids new))) -1))
                                 verbatim (seq (set/intersection (subtrees old) (subtrees body)))
-                                alpha (when-not verbatim (alpha-kept old body (bound-syms (ia id)) (bound-syms f)))
+                                alpha (when-not verbatim (alpha-kept old body (bound-syms (ia (or (:was fr) id))) (bound-syms f)))
                                 ren (apply merge (map #(:renamed (nth % 2)) alpha))]
                           :when (or verbatim (seq alpha))
                           :let [[x y] (if verbatim [old body] (first alpha))

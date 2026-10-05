@@ -19,7 +19,9 @@ Each file gets one verdict: `semantic`, `rename-only`, `comments-only` or
 code (binding, clause, argument, body step) with the old and new expression,
 the sub-expressions that survived, moves between slots, and extractions of an
 existing expression into a new function, including what drifted on the way and
-which locals were renamed.
+which locals were renamed. A form that changed visibility, was wrapped by a new
+macro, or was renamed and rewritten shows as one change (`⇠ was …`), not as a
+removal and an addition.
 
 ## Use
 

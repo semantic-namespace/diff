@@ -55,6 +55,8 @@
 (defn- change-row [{:keys [op path old new extracted rename kept] :as c}]
   (let [p (fmt-path path) mv (move-note c)]
     (case op
+      :wrapped [:li.chg.chg-sem [:span.p "whole form"] [:span.what "now wrapped in " [:code (or (head new) (name (n/tag new)))] "; the old form is inside it unchanged"]]
+      :visibility [:li.chg.chg-sem [:span.p "visibility"] [:span.what (str (:from c) " → " (:to c))]]
       :comments [:li.chg.chg-note [:span.p (or (not-empty p) "form")] [:span.what "comments or docstring only"]]
       :wrapper  [:li.chg.chg-sem [:span.p "wrapper"] [:span.what (str (name (n/tag old)) " removed → " (name (n/tag new)))]]
       :added    [:li.chg.chg-sem [:span.p p] [:code.add (short (n/string new))] mv]
@@ -73,14 +75,15 @@
 
 (defn- with-attrs [[tag & more] attrs] (into [tag attrs] more))
 
-(defn- form-view [{:keys [old new path]} {:keys [id changes extraction note]}]
+(defn- form-view [{:keys [old new path]} {:keys [id was changes extraction note]}]
   (let [op0 (:op (first changes))
         full? (#{:added-form :removed-form} op0)
-        node-old (when-not (= op0 :added-form) (get (index old) id))
+        node-old (when-not (= op0 :added-form) (get (index old) (or was id)))
         node-new (when-not (= op0 :removed-form) (get (index new) id))]
     [:section.form {:data-file path :data-form (str/join " " (remove nil? (map str id)))}
      [:h3 [:code (str/join " " (map str id))]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
+      (when was [:span.tag.tag-note (str "was " (str/join " " (remove nil? (map str was))))])
       (when extraction [:span.tag.tag-ext (str "extracted from " (str/join " " (map str (:from extraction))))])
       (when note [:span.tag.tag-note note])]
      (when-not full?
