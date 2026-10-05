@@ -31,3 +31,8 @@
     (is (= [:pre.code "(ns co.acme.billing.spec.invoice)"] (nth out 3)))
     (is (= {"co.acme.billing.spec.invoice" "spec.invoice"}
            (:nss (names/used t "only :co.acme.billing.spec.invoice/lines here"))) "the legend lists only names the page uses")))
+
+(deftest only-qualified-names-are-shortened
+  (let [t {:paths {} :nss {"org.acme.billing.core" "billing"}}]
+    (is (= "billing/charge" (names/shorten-text t "org.acme.billing.core/charge")))
+    (is (= "[org.acme.billing.core :as billing]" (names/shorten-text t "[org.acme.billing.core :as billing]")))))

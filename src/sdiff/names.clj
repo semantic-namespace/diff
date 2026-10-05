@@ -79,7 +79,7 @@
   (let [ps (sort-by (comp - count key) paths)
         ns (sort-by (comp - count key) nss)
         p-re (when (seq ps) (re-pattern (str "(?<![\\w/.\\-])(" (str/join "|" (map (comp java.util.regex.Pattern/quote key) ps)) ")(?![\\w/\\-])")))
-        n-re (when (seq ns) (re-pattern (str "(?<![\\w.\\-])(" (str/join "|" (map (comp java.util.regex.Pattern/quote key) ns)) ")(?=/|[\\s)\\]}\"',]|$)")))]
+        n-re (when (seq ns) (re-pattern (str "(?<![\\w.\\-])(" (str/join "|" (map (comp java.util.regex.Pattern/quote key) ns)) ")(?=/)")))]
     (fn [s]
       (cond-> s
         p-re (str/replace p-re #(get paths (second %) (first %)))
