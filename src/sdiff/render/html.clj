@@ -18,15 +18,57 @@
   (let [{:keys [row col end-row end-col]} (meta node)]
     (when row [(off row col) (off end-row end-col)])))
 
+(defn- token? [cls] (str/starts-with? cls "t-"))
+
+(defn- change-mark? [cls] (not (or (= cls "kept") (token? cls))))
+
 (defn- render-ranges
-  "Wrap `[s e cls]` ranges (sorted, nesting allowed, no partial overlap) in marks over src[from,to)."
+  "Wrap `[s e cls]` ranges (sorted, nesting allowed, no partial overlap) over
+  src[from,to): change marks as `mark`, syntax tokens (`t-*`) as `span`."
   [src from to rs]
   (loop [pos from rs rs out []]
     (if-let [[s e cls] (first rs)]
       (let [inner (take-while (fn [[s2 e2]] (and (>= s2 s) (<= e2 e))) (rest rs))
             after (drop (count inner) (rest rs))]
-        (recur e after (conj out (subs src pos s) (into [:mark {:class cls}] (render-ranges src s e inner)))))
+        (recur e after (conj out (subs src pos s) (into [(if (token? cls) :span :mark) {:class cls}] (render-ranges src s e inner)))))
       (conj out (subs src pos to)))))
+
+(defn- range-order [[s e cls]] [s (- e) (if (token? cls) 1 0)])
+
+(def ^:private special-forms
+  #{"def" "defn" "defn-" "defmacro" "defmethod" "defmulti" "defprotocol" "defrecord" "deftype" "defonce" "deftest"
+    "ns" "let" "letfn" "fn" "fn*" "if" "if-not" "if-let" "if-some" "when" "when-not" "when-let" "when-some" "when-first"
+    "cond" "condp" "case" "do" "loop" "recur" "try" "catch" "finally" "throw" "for" "doseq" "dotimes" "while"
+    "->" "->>" "some->" "some->>" "cond->" "cond->>" "as->" "and" "or" "binding" "with-open" "with-redefs"
+    "reify" "extend-protocol" "extend-type" "proxy" "comment" "quote" "var" "declare" "require" "import"
+    "refer-clojure" "delay" "future" "lazy-seq" "testing" "is"})
+
+(defn- token-class [text]
+  (cond (str/starts-with? text ":") "t-kw"
+        (str/starts-with? text "\"") "t-str"
+        (str/starts-with? text "\\") "t-str"
+        (re-find #"^[+-]?\d" text) "t-num"
+        (#{"nil" "true" "false"} text) "t-lit"
+        (special-forms text) "t-special"))
+
+(defn- token-marks
+  "Syntax classes for the leaves of `form`: keywords, strings, numbers,
+  comments, discarded forms, special forms and the head of each list."
+  [form]
+  (let [out (volatile! [])
+        skip #{:whitespace :newline :comma :comment}]
+    (letfn [(walk [node head?]
+              (case (n/tag node)
+                (:comment :uneval) (vswap! out conj [node "t-cmt"])
+                :regex (vswap! out conj [node "t-str"])
+                :token (when-let [cls (or (token-class (n/string node)) (when head? "t-head"))]
+                         (vswap! out conj [node cls]))
+                (when (n/inner? node)
+                  (let [kids (n/children node)
+                        head (first (remove (comp skip n/tag) kids))]
+                    (doseq [k kids] (walk k (and (= :list (n/tag node)) (identical? k head))))))))]
+      (walk form false))
+    @out))
 
 (defn- highlighted
   "Source of `form` with `marks` (`[node class]`) wrapped in spans; marks may nest.
@@ -34,8 +76,8 @@
   [src form marks]
   (let [off (offsets src)
         [fs fe] (range-of off form)
-        rs (sort-by (fn [[s e]] [s (- e)])
-                    (for [[node cls] marks :let [r (range-of off node)] :when r
+        rs (sort-by range-order
+                    (for [[node cls] (concat marks (token-marks form)) :let [r (range-of off node)] :when r
                           :let [[s e] r] :when (and (>= s fs) (<= e fe))] [s e cls]))]
     (render-ranges src fs fe rs)))
 
@@ -48,7 +90,7 @@
         off (offsets src)
         {fr :row fer :end-row} (meta form)
         [fs fe] (range-of off form)
-        changed (sort (for [[node cls] marks :when (not= cls "kept") :let [{:keys [row end-row]} (meta node)] :when row] [row end-row]))
+        changed (sort (for [[node cls] marks :when (change-mark? cls) :let [{:keys [row end-row]} (meta node)] :when row] [row end-row]))
         clusters (reduce (fn [acc [r e]]
                            (let [[pr pe] (peek acc)]
                              (if (and pe (<= r (+ pe 1 (* 2 context)))) (conj (pop acc) [pr (max pe e)]) (conj acc [r e]))))
@@ -56,8 +98,8 @@
         windows (for [[r e] clusters] [(max fr (- r context)) (min fer (+ e context))])
         shown (reduce + (map (fn [[a b]] (inc (- b a))) windows))]
     (when (and fr (seq windows) (<= (+ shown 4) (inc (- fer fr))))
-      (let [rs (sort-by (fn [[s e]] [s (- e)])
-                        (for [[node cls] marks :let [r (range-of off node)] :when r] (conj r cls)))]
+      (let [rs (sort-by range-order
+                        (for [[node cls] (concat marks (token-marks form)) :let [r (range-of off node)] :when r] (conj r cls)))]
         (->> (for [[[a b] prev-end] (map vector windows (cons (dec fr) (map second windows)))
                    :let [ws (max fs (off a 1)) we (min fe (+ (off b 1) (count (nth lines (dec b)))))
                          inner (filter (fn [[s e]] (and (>= s ws) (<= e we))) rs)

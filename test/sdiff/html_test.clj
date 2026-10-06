@@ -32,3 +32,10 @@
                                  "(ns a)\n(defn f [x]\n  (let [m (g x)]\n    (h {:purpose :scan :a 2} m)))\n")))]
     (is (str/includes? out "› map 1 › key :mode"))
     (is (str/includes? out "‥ › key :purpose = :scan"))))
+
+(deftest source-blocks-carry-syntax-classes-around-the-change-marks
+  (let [h (page-of "(ns a)\n(defn f [x] (g x :k \"s\")) ; c\n" "(ns a)\n(defn f [x] (g x :k \"t\")) ; c\n")]
+    (is (str/includes? h "<span class=\"t-special\">defn</span>"))
+    (is (str/includes? h "<span class=\"t-head\">g</span>"))
+    (is (str/includes? h "<span class=\"t-kw\">:k</span>"))
+    (is (str/includes? h "<mark class=\"add\"><span class=\"t-str\">&quot;t&quot;</span></mark>") "a changed string is marked and coloured")))
