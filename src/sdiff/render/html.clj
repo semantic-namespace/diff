@@ -202,11 +202,33 @@
       [:ul (for [f forms] [:li [:code (str/join " " (map str (:id f)))]
                            (for [c (:changes f) :when (:rename c)] [:span.where (str " — " (fmt-path (:path c)))])])]])])
 
+(defn- standing-word [state]
+  (case state "APPROVED" "approved" "CHANGES_REQUESTED" "requested changes" "DISMISSED" "review dismissed" state))
+
+(defn status-text
+  "One line: the PR's state, then each reviewer's standing, the viewer first."
+  [{:keys [state merged-at author viewer mine others]}]
+  (str/join " · "
+            (concat [(str state (when merged-at (str " " merged-at)))]
+                    (when (= author viewer) ["your own PR"])
+                    (when mine [(str "you " (standing-word (:state mine)) " " (:at mine))])
+                    (for [{:keys [login state at]} others] (str login " " (standing-word state) " " at)))))
+
+(defn- status-view [{:keys [state merged-at author viewer mine others] :as st}]
+  (when st
+    [:p.status
+     [:span.badge {:class (str "badge-" state)} state (when merged-at (str " " merged-at))]
+     (when (= author viewer) [:span.mute " · your own PR"])
+     (when mine (list " · " [:a {:href (:url mine) :target "_blank"} "you " (standing-word (:state mine))] " " [:span.mute (:at mine)]))
+     (for [{:keys [login state at url]} others]
+       (list " · " [:a {:href url :target "_blank"} login " " (standing-word state)] " " [:span.mute at]))]))
+
 (defn- pr-view [gh-url {:keys [num title clj other renames] :as r}]
   (let [counts (frequencies (map :verdict clj))]
     [:section.pr {:id (str "pr-" num)}
      [:header
       [:h1 (if gh-url [:a {:href (str gh-url "/pull/" num) :target "_blank"} (str "#" num)] (str "#" num)) " " title]
+      (status-view (:status r))
       [:p.sum
        (str (count clj) " Clojure file" (when (not= 1 (count clj)) "s") ": ")
        (str/join ", " (for [[k l] [[:semantic "change behaviour"] [:rename-only "rename only"] [:comments-only "comments only"] [:whitespace-only "formatting only"]] :when (counts k)] (str (counts k) " " l)))

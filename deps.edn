@@ -11,4 +11,4 @@
                      io.github.plumce/plumcp.core-json-cheshire {:mvn/version "0.3.0"}}
         :main-opts ["-m" "sdiff.mcp"]}
   :test {:extra-paths ["test"]
-         :main-opts ["-e" "(require 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test) (let [{:keys [fail error]} (clojure.test/run-tests 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test)] (System/exit (if (pos? (+ fail error)) 1 0)))"]}}}
+         :main-opts ["-e" "(require 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test 'sdiff.github-test) (let [{:keys [fail error]} (clojure.test/run-tests 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test 'sdiff.github-test)] (System/exit (if (pos? (+ fail error)) 1 0)))"]}}}

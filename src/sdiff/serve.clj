@@ -83,7 +83,8 @@
 
 (defn- page-config [r]
   (let [{:keys [repo num url author]} (:pr r)]
-    {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)}))
+    {:ref (str repo "#" num) :repo repo :num num :url url :author author :head (:head r) :token token :forms (form-index r)
+     :status (github/pr-status (:pr r))}))
 
 (defonce ^:private names-cache (atom {}))
 
@@ -100,6 +101,7 @@
             body (str (when g (group/outline-text g)) (with-out-str (text/print-report r)))
             used (names/used (names-of r) body)]
         (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n"
+             (html/status-text (github/pr-status (:pr r))) "\n"
              (names/legend-text used) "\n"
              (names/shorten-text used body))))))
 
@@ -114,6 +116,7 @@
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         config (page-config r)
+        r (assoc r :status (:status config))
         review (state/review repo num)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
         v (cond view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name)))

@@ -152,9 +152,22 @@
   }
   applyFolds();
 
+  const status = cfg.status || {};
+  const own = status.author && status.author === status.viewer;
+  const approved = status.mine && status.mine.state === 'APPROVED';
+  const locked = status.state === 'merged' || status.state === 'closed';
+  const verdictLabel = v => v === 'approve' && approved ? 'approve (already approved ' + status.mine.at + ')'
+                         : (v === 'approve' || v === 'request-changes') && own ? v.replace('-', ' ') + ' (not on your own PR)'
+                         : v.replace('-', ' ');
+  const verdictAllowed = v => !((v === 'approve' && (approved || own)) || (v === 'request-changes' && own));
   const verdict = el('select', { onchange: e => { state.verdict = e.target.value; changed(); } },
-    ...['comment', 'approve', 'request-changes'].map(v => el('option', { value: v }, v.replace('-', ' '))));
+    ...['comment', 'approve', 'request-changes'].map(v => el('option', Object.assign({ value: v }, verdictAllowed(v) ? {} : { disabled: '' }), verdictLabel(v))));
+  if (!verdictAllowed(state.verdict)) state.verdict = 'comment';
   verdict.value = state.verdict;
+  const standing = [status.state ? 'This PR is ' + status.state + (status['merged-at'] ? ' (' + status['merged-at'] + ')' : '') + '.' : '',
+    own ? 'It is your own, so GitHub only allows a comment review.' : '',
+    status.mine ? 'You ' + status.mine.state.toLowerCase().replace('_', ' ') + ' it on ' + status.mine.at + '.' : '',
+    locked ? 'Nothing more can be posted here.' : ''].filter(Boolean).join(' ');
   const summary = el('textarea', { rows: 3, placeholder: 'Review summary (markdown)', oninput: e => { state.summary = e.target.value; changed(); } });
   summary.value = state.summary;
   const list = el('ol', { class: 'sd-notes' });
@@ -164,7 +177,7 @@
   const panel = el('aside', { class: 'sd-panel' },
     el('div', { class: 'sd-head', onclick: () => panel.classList.toggle('sd-open') }, el('strong', {}, 'Review ' + cfg.ref), count),
     el('div', { class: 'sd-body' },
-      cfg.author ? el('p', { class: 'sd-hint' }, 'Author: ' + cfg.author + '. GitHub only allows a comment review on your own pull request.') : null,
+      standing ? el('p', { class: 'sd-hint sd-standing' }, standing) : null,
       el('p', { class: 'sd-hint' }, 'Click a file or form heading to fold it. Alt+click folds or unfolds every one at that level, and Alt+click on a source toggle opens or closes them all.'),
       el('label', {}, 'Verdict ', verdict), summary, list,
       el('details', { class: 'sd-settings' }, el('summary', {}, 'Settings'),
@@ -219,7 +232,8 @@
                    : el('span', { class: 'sd-inbody' }, 'in summary: ' + p.body),
           ' ← ' + where(p.note)))),
         el('details', {}, el('summary', {}, payload.event + ' payload'), el('pre', {}, JSON.stringify(payload, null, 2))));
-      postBtn.disabled = false;
+      postBtn.disabled = locked;
+      if (locked) out.append(el('p', { class: 'sd-hint' }, 'Preview only: the PR is ' + status.state + '.'));
     } catch (e) { out.textContent = 'Draft failed: ' + e.message; }
   }
 

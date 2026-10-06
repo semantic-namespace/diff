@@ -70,6 +70,35 @@
 
 (defonce ^:private cache (atom {}))
 
+(defonce ^:private viewer-login (delay (str/trim (gh ["api" "user" "--jq" ".login"]))))
+
+(defn standing
+  "Each user's latest review that changes the PR's standing (approved, changes
+  requested, or dismissed), split into the viewer's and everyone else's.
+  Comment-only reviews do not count, as on GitHub."
+  [reviews viewer]
+  (let [latest (->> reviews
+                    (filter #(#{"APPROVED" "CHANGES_REQUESTED" "DISMISSED"} (:state %)))
+                    (group-by #(get-in % [:user :login]))
+                    (map (fn [[login rs]]
+                           (let [r (last (sort-by :submitted_at rs))]
+                             {:login login :state (:state r) :at (some-> (:submitted_at r) (subs 0 10)) :url (:html_url r)})))
+                    (sort-by :login))]
+    {:mine (some #(when (= viewer (:login %)) %) latest)
+     :others (vec (remove #(= viewer (:login %)) latest))}))
+
+(defn pr-status
+  "Where the PR stands right now: open, draft, closed or merged, who wrote it,
+  who is looking, and each reviewer's standing. Fetched on every page load,
+  since none of it changes the head commit."
+  [{:keys [repo num]}]
+  (let [p (api-json (str "repos/" repo "/pulls/" num))
+        reviews (api-json (str "repos/" repo "/pulls/" num "/reviews?per_page=100"))]
+    (merge {:state (cond (:merged p) "merged" (:draft p) "draft" :else (:state p))
+            :merged-at (some-> (:merged_at p) (subs 0 10))
+            :author (get-in p [:user :login]) :viewer @viewer-login}
+           (standing reviews @viewer-login))))
+
 (defn cached-report
   "`report` for a PR reference, fetched once per head commit, so a draft and the
   post that follows it anchor notes to the same lines."
