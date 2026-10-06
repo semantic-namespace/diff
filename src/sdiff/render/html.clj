@@ -205,7 +205,6 @@
             [:h1 "What changed, by form"]
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
              ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]
-            [:p.legend [:span.prov.legend-derived "derived"] " comes from a tool, named on the label. " [:span.prov.legend-inferred "inferred"] " is a reviewer's or a model's reading of it, with the derived facts it rests on."]]
            (let [content (list before
                                (or body
                                    (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
