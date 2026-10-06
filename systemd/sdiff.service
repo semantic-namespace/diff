@@ -1,0 +1,13 @@
+[Unit]
+Description=sdiff structural review UI
+After=network.target
+
+[Service]
+WorkingDirectory=%h/git/semantic-namespace/diff
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/bb sdiff serve 7878
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

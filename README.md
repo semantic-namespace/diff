@@ -109,6 +109,23 @@ formatting, comments or names.
 VPN address. Anyone who can reach that address can then read PRs and post
 reviews as you.
 
+### Running it as a daemon
+
+`systemd/sdiff.service` runs the UI as a user service, so it survives logouts,
+reboots and crashes. Edit `WorkingDirectory`, the path to `bb` and the `serve`
+arguments to match your machine, then:
+
+```
+cp systemd/sdiff.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now sdiff
+loginctl enable-linger $USER      # start at boot, without a login
+```
+
+`systemctl --user restart sdiff` picks up a new checkout, `journalctl --user
+-u sdiff -f` follows its log. The service runs `gh` as you, so `gh auth status`
+must already work for your user.
+
 ## Derived and inferred
 
 Everything on the page is one of two kinds, and labelled. **Derived** content
