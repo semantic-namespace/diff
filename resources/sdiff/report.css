@@ -58,6 +58,7 @@ mark{color:inherit;border-radius:2px;padding:0 .1em}
 mark.del{background:var(--del-bg);color:var(--del)}mark.add{background:var(--add-bg);color:var(--add)}
 mark.ren{background:var(--ren-bg);color:var(--ren)}mark.ext{background:var(--ext-bg);color:var(--ext)}
 mark.kept,code.kept{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+pre.code mark.kept{background:var(--panel);box-shadow:none}
 .chg .what code.kept{display:inline;padding:0 .3rem}
 em.reshape{font-style:normal;color:var(--sem)}
 .other summary{color:var(--mute)}
