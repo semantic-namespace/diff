@@ -204,7 +204,7 @@
            [:div.intro
             [:h1 "What changed, by form"]
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
-             ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]
+             ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]]
            (let [content (list before
                                (or body
                                    (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
