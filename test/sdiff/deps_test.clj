@@ -38,7 +38,10 @@
     (is (contains? (get-in g [:calls tag]) sdef))))
 
 (deftest a-new-form-only-says-who-calls-it
-  (let [parts (#'deps/line-parts {:new? true :callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 0
+  (let [parts (#'deps/line-parts {:new? true :callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 0 :outside-callers 1
                                   :calls-added ["x/y"] :libs-added ["lib"] :reaches-added [:postgres]})]
     (is (= 2 (count parts)) "callers, and the I/O it brings")
     (is (re-find #"1 caller" (first parts)))))
+
+(deftest callers-from-the-same-namespace-alone-are-not-worth-a-line
+  (is (empty? (#'deps/line-parts {:callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 1 :outside-callers 0}))))

@@ -225,8 +225,13 @@
   "How a form is named on the page: its var, else the keyword it defines, else
   its namespace and head."
   [snap node]
-  (let [{:keys [ns name var]} (get-in snap [:forms node])]
-    (or var (when-not (str/starts-with? (str name) "defmethod") (defined-keyword name)) (str ns " · " name))))
+  (let [{:keys [ns name var]} (get-in snap [:forms node])
+        [enclosing method] (str/split (str name) #" · " 2)]
+    (or var
+        (when method
+          (str method " in " (or (last (re-find #"^defmethod \S+ (\S+)" enclosing)) (last (str/split enclosing #" ")))))
+        (when-not (str/starts-with? (str name) "defmethod") (defined-keyword name))
+        (str ns " · " name))))
 
 (defn- qualified [snap node] (label snap node))
 
@@ -251,6 +256,7 @@
          :callers-by-ns (into (sorted-map) (update-vals (group-by #(get-in head [:forms % :ns]) ch) (fn [ns] (sort (map #(qualified head %) ns)))))
          :all-reach (sort r-h)
          :test-callers (count (filter #(get-in head [:forms % :test]) ch))
+         :outside-callers (count (remove #(= (get-in head [:forms % :ns]) (get-in head [:forms h :ns])) ch))
          :callers-before (count cb)
          :calls-added (sort (remove (or ee-b #{}) ee-h)) :calls-removed (sort (remove (or ee-h #{}) ee-b))
          :libs (sort x-h) :libs-added (sort (remove (or x-b #{}) x-h)) :libs-removed (sort (remove (or x-h #{}) x-b))
@@ -329,10 +335,12 @@
   "What is worth saying about one changed form: callers for any form, and for a
   form that existed before, the calls, libraries and I/O it gained or lost."
   [x]
-  (let [existing? (not (or (:new? x) (:removed? x)))]
+  (let [existing? (not (or (:new? x) (:removed? x)))
+        callers-worth-saying? (or (pos? (:outside-callers x 0))
+                                  (and existing? (not= (count (:callers x)) (:callers-before x))))]
     (remove nil?
             [(cond (:removed? x) (when (pos? (:callers-before x)) (str "removed · had " (:callers-before x) " callers"))
-                   (seq (:callers x)) (str "← " (count (:callers x)) " caller" (when (not= 1 (count (:callers x))) "s")
+                   (and (seq (:callers x)) callers-worth-saying?) (str "← " (count (:callers x)) " caller" (when (not= 1 (count (:callers x))) "s")
                                            " · " (:caller-ns x) " ns"
                                            (when (pos? (:test-callers x)) (str " · " (:test-callers x) " in tests"))
                                            (when (and existing? (not= (count (:callers x)) (:callers-before x))) (str " (was " (:callers-before x) ")"))))
@@ -349,7 +357,8 @@
       (when-not (:error d)
         (let [file (or (some #(when (= (:path file) (:path %)) %) (:clj report)) file)
               full (or (some #(when (= (:id form) (:id %)) %) (:forms file)) form)
-              x (form-deps d file full)
+              test-file? (re-find (re-pattern (:test-paths defaults)) (str (:path file)))
+              x (when-not test-file? (form-deps d file full))
               parts (when x (line-parts x))]
           (when (seq parts)
             [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))}
