@@ -40,3 +40,8 @@
                      [k (mapv #(cond-> % (:filename %) (update :filename (partial relative root))) xs)])))
         (finally
           (doseq [f (reverse (file-seq root))] (.delete ^java.io.File f)))))))
+
+(defn lint
+  "clj-kondo's full result for `paths` under `config`, or nil when clj-kondo is unavailable."
+  [paths config]
+  (when-let [run! @run] (run! {:lint (mapv str paths) :config config})))

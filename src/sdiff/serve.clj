@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [hiccup2.core :as hc]
             [org.httpkit.server :as http]
+            [sdiff.deps]
             [sdiff.github :as github]
             [sdiff.group :as group]
             [sdiff.render.html :as html]

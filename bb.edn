@@ -4,6 +4,6 @@
          :requires ([sdiff.main])
          :task (apply sdiff.main/-main *command-line-args*)}
   test {:doc "run the fixture suite"
-        :requires ([clojure.test :as t] [sdiff.core-test] [sdiff.review-test] [sdiff.state-test] [sdiff.decorate-test] [sdiff.view-test] [sdiff.names-test] [sdiff.html-test] [sdiff.group-test] [sdiff.github-test])
-        :task (let [{:keys [fail error]} (t/run-tests 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test 'sdiff.github-test)]
+        :requires ([clojure.test :as t] [sdiff.core-test] [sdiff.review-test] [sdiff.state-test] [sdiff.decorate-test] [sdiff.view-test] [sdiff.names-test] [sdiff.html-test] [sdiff.group-test] [sdiff.github-test] [sdiff.deps-test])
+        :task (let [{:keys [fail error]} (t/run-tests 'sdiff.core-test 'sdiff.review-test 'sdiff.state-test 'sdiff.decorate-test 'sdiff.view-test 'sdiff.names-test 'sdiff.html-test 'sdiff.group-test 'sdiff.github-test 'sdiff.deps-test)]
                 (when (pos? (+ fail error)) (System/exit 1)))}}}

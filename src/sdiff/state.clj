@@ -7,6 +7,7 @@
 
 (def default-settings
   {:show-inferred true
+   :skip-deps false
    :fold-viewed-forms true
    :fold-viewed-files true
    :mark-file-on-github false
