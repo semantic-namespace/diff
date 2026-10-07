@@ -70,3 +70,10 @@ em.reshape{font-style:normal;color:var(--sem)}
 .badge-open{background:var(--add-bg);color:var(--add)}.badge-draft{background:var(--panel);color:var(--mute);box-shadow:inset 0 0 0 1px var(--line)}
 .badge-merged{background:var(--ren-bg);color:var(--ren)}.badge-closed{background:var(--del-bg);color:var(--del)}
 .status a{color:var(--sem)}
+.deps-line{font-size:.82rem;color:var(--mute);margin:.25rem 0 .45rem;line-height:1.6}
+.deps-line code{font-size:.78rem;color:var(--ink)}
+.deps-line .tag{font-size:.72rem;padding:0 .35rem}
+.deps-line .sep{opacity:.6}
+.deps-callers{display:inline-block;margin-left:.5rem}
+.deps-callers summary{cursor:pointer;display:inline;color:var(--sem)}
+.deps-callers ul{margin:.3rem 0 .2rem;padding-left:1.1rem}

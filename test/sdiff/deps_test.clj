@@ -10,6 +10,8 @@
    "src/app/core.clj" "(ns app.core (:require [app.port :as port] [app.q :as q] [app.cycle-a]))\n(defn persist [s x] (port/save! s x))\n(defn find [db id] (q/lookup db id))\n(defn run [s db] (persist s 1) (find db 1))\n"
    "src/app/cycle_a.clj" "(ns app.cycle-a (:require [app.cycle-b]))\n"
    "src/app/cycle_b.clj" "(ns app.cycle-b (:require [app.cycle-a]))\n"
+   "src/app/spec.clj" "(ns app.spec (:require [clojure.spec.alpha :as s]))\n(s/def ::purpose keyword?)\n"
+   "src/app/use.clj" "(ns app.use (:require [app.spec :as spec]))\n(defn tag [x] {::spec/purpose x})\n"
    "test/app/mock.clj" "(ns app.mock (:require [app.port :as port] [app.core :as core]))\n(defrecord Fake [] port/Store (save! [_ x] x))\n(defn t [] (core/persist (->Fake) 1))\n"})
 
 (defn- project []
@@ -28,3 +30,15 @@
     (is (some #(= :postgres %) (mapcat val (select-keys (:io g) (get-in g [:calls (node g "app.core/persist")]))))
         "a protocol with one implementation outside tests is followed")
     (is (= #{#{"app.cycle-a" "app.cycle-b"}} (#'deps/cycles (:ns-deps g) (:project g))))))
+
+(deftest a-spec-keyword-is-a-dependency-on-its-s-def
+  (let [g (deps/graph (project) deps/defaults)
+        sdef (some (fn [[k v]] (when (re-find #"s/def ::purpose" (:name v)) k)) (:forms g))
+        tag (some (fn [[k v]] (when (= "app.use/tag" (:var v)) k)) (:forms g))]
+    (is (contains? (get-in g [:calls tag]) sdef))))
+
+(deftest a-new-form-only-says-who-calls-it
+  (let [parts (#'deps/line-parts {:new? true :callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 0
+                                  :calls-added ["x/y"] :libs-added ["lib"] :reaches-added [:postgres]})]
+    (is (= 2 (count parts)) "callers, and the I/O it brings")
+    (is (re-find #"1 caller" (first parts)))))

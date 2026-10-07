@@ -48,6 +48,30 @@
   [k f]
   (swap! bridges (fn [bs] (conj (vec (remove #(= k (first %)) bs)) [k f]))))
 
+(defn- by-position [entries] (sort-by (juxt :row :col) entries))
+
+(defn keyword-bridge
+  "A bridge where a form that names a keyword depends on the form that defines
+  it. A form defines a keyword when a call matching `defining` (a regex over the
+  called var's qualified name) is followed, as its first keyword, by that
+  keyword: `(s/def ::k ...)`, or a registration such as `(register! :fn/x ...)`."
+  [defining]
+  (fn [{:keys [analysis form-at]}]
+    (let [kws (update-vals (group-by :filename (filter :ns (:keywords analysis))) by-position)
+          kw (fn [{:keys [ns name]}] (keyword (str ns) name))
+          first-after (fn [file row col] (some #(when (or (> (:row %) row) (and (= (:row %) row) (> (:col %) col))) %) (kws file)))
+          defines (into {} (for [{:keys [filename row col to name]} (:var-usages analysis)
+                                 :when (and to (re-find defining (str to "/" name)))
+                                 :let [k (first-after filename row col) f (form-at filename row)]
+                                 :when (and k f (= f (form-at filename (:row k))))]
+                             [(kw k) f]))]
+      (for [file (keys kws) e (kws file)
+            :let [from (form-at file (:row e)) to (defines (kw e))]
+            :when (and from to (not= from to))]
+        [from to]))))
+
+(add-bridge! ::spec (keyword-bridge #"^(clojure|cljs)\.spec\.alpha/def$"))
+
 (defn- top-forms [file]
   (try
     (for [node (core/forms (slurp file))
@@ -195,7 +219,16 @@
 
 (defn- names [snap nodes] (set (keep #(get-in snap [:forms % :name]) nodes)))
 
-(defn- qualified [snap node] (let [{:keys [ns name var]} (get-in snap [:forms node])] (or var (str ns " · " name))))
+(defn- defined-keyword [name] (second (re-find #"^\S+ (:\S+)" (str name))))
+
+(defn- label
+  "How a form is named on the page: its var, else the keyword it defines, else
+  its namespace and head."
+  [snap node]
+  (let [{:keys [ns name var]} (get-in snap [:forms node])]
+    (or var (when-not (str/starts-with? (str name) "defmethod") (defined-keyword name)) (str ns " · " name))))
+
+(defn- qualified [snap node] (label snap node))
 
 (defn form-deps
   "For one changed form: callers at head, and the callees, libraries and I/O
@@ -215,6 +248,8 @@
             r-h (rch head h) r-b (rch base b)]
         {:removed? (nil? h) :new? (nil? b)
          :callers (sort (map #(qualified head %) ch)) :caller-ns (count (set (keep #(get-in head [:forms % :ns]) ch)))
+         :callers-by-ns (into (sorted-map) (update-vals (group-by #(get-in head [:forms % :ns]) ch) (fn [ns] (sort (map #(qualified head %) ns)))))
+         :all-reach (sort r-h)
          :test-callers (count (filter #(get-in head [:forms % :test]) ch))
          :callers-before (count cb)
          :calls-added (sort (remove (or ee-b #{}) ee-h)) :calls-removed (sort (remove (or ee-h #{}) ee-b))
@@ -270,7 +305,7 @@
             new-io (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:reaches-added x)))) per-form)
             new-libs (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:libs-added x)))) per-form)
             widest (take 5 (sort-by (fn [[_ _ x]] (- (count (:callers x)))) (remove (fn [[_ _ x]] (:removed? x)) per-form)))]
-        (derived "deps · clj-kondo over the whole repository, base and head"
+        (derived "deps · clj-kondo over the whole repository, base and head; the lines under each form come from the same analysis"
                  [:h5 "Dependencies"]
                  [:p (count per-form) " changed forms · " (count new-io) " outside tests reach a new kind of I/O · "
                   (count new-libs) " use a new library · " (count requires) " namespaces change their requires · "
@@ -278,7 +313,7 @@
                  (when (seq cycles)
                    [:p "New cycles: " (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))])
                  (when (seq new-io)
-                   [:ul (for [[_ form x] new-io] [:li [:code (decorate/form-id form)] " now reaches " (tags "tag-ext" (:reaches-added x))])])
+                   [:ul (for [[_ form x] new-io] [:li [:code (or (defined-keyword (decorate/form-id form)) (decorate/form-id form))] " now reaches " (tags "tag-ext" (:reaches-added x))])])
                  (when (seq requires)
                    [:details [:summary "Requires"]
                     [:ul (for [{:keys [ns added removed]} requires]
@@ -288,33 +323,40 @@
                     [:ul (for [[f form x] widest]
                            [:li [:code (decorate/form-id form)] " " [:span.mute (:path f)] " · called from " (count (:callers x)) " forms in " (:caller-ns x) " namespaces"])]]))))))
 
+(defn- codes [xs] (interpose ", " (map (fn [c] [:code c]) xs)))
+
+(defn- line-parts
+  "What is worth saying about one changed form: callers for any form, and for a
+  form that existed before, the calls, libraries and I/O it gained or lost."
+  [x]
+  (let [existing? (not (or (:new? x) (:removed? x)))]
+    (remove nil?
+            [(cond (:removed? x) (when (pos? (:callers-before x)) (str "removed · had " (:callers-before x) " callers"))
+                   (seq (:callers x)) (str "← " (count (:callers x)) " caller" (when (not= 1 (count (:callers x))) "s")
+                                           " · " (:caller-ns x) " ns"
+                                           (when (pos? (:test-callers x)) (str " · " (:test-callers x) " in tests"))
+                                           (when (and existing? (not= (count (:callers x)) (:callers-before x))) (str " (was " (:callers-before x) ")"))))
+             (when (and existing? (seq (:calls-added x))) (list "→ now " (codes (:calls-added x))))
+             (when (and existing? (seq (:calls-removed x))) (list "no longer " (codes (:calls-removed x))))
+             (when (and existing? (seq (:libs-added x))) (list "new libraries " (tags "tag-ext" (:libs-added x))))
+             (when (and existing? (seq (:libs-removed x))) (list "drops " (tags "tag-del" (:libs-removed x))))
+             (when (and (not (:removed? x)) (seq (:reaches-added x))) (list "now reaches " (tags "tag-ext" (:reaches-added x))))
+             (when (seq (:reaches-removed x)) (list "no longer reaches " (tags "tag-del" (:reaches-removed x))))])))
+
 (defn form-line [ctx file form]
   (let [report (:report ctx)]
     (when-let [d (data report)]
       (when-not (:error d)
         (let [file (or (some #(when (= (:path file) (:path %)) %) (:clj report)) file)
               full (or (some #(when (= (:id form) (:id %)) %) (:forms file)) form)
-              x (form-deps d file full)]
-          (when (and x (or (seq (:callers x)) (seq (:calls-added x)) (seq (:calls-removed x)) (seq (:libs x)) (seq (:reaches x)) (seq (:reaches-removed x))))
-            (derived "deps"
-                     [:p
-                      (if (:removed? x)
-                        (list "removed · had " (:callers-before x) " callers")
-                        (list (if (seq (:callers x)) "called from " "no callers")
-                              (when (seq (:callers x)) (str (count (:callers x)) (if (= 1 (count (:callers x))) " form" " forms")))
-                              (when (pos? (:caller-ns x)) (str " in " (:caller-ns x) " namespace" (when (not= 1 (:caller-ns x)) "s")))
-                              (when (pos? (:test-callers x)) (str ", " (:test-callers x) " of them tests"))
-                              (when (and (not (:new? x)) (not= (count (:callers x)) (:callers-before x))) (str " (was " (:callers-before x) ")"))))
-                      (when (seq (:reaches x)) (list " · reaches " (tags "tag-note" (:reaches x))))
-                      (when (seq (:reaches-added x)) (list " · newly " (tags "tag-ext" (:reaches-added x))))
-                      (when (seq (:reaches-removed x)) (list " · no longer " (tags "tag-del" (:reaches-removed x))))]
-                     (when (or (seq (:calls-added x)) (seq (:calls-removed x)) (seq (:libs-added x)) (seq (:libs-removed x)))
-                       [:p (when (seq (:calls-added x)) (list "now calls " (interpose ", " (map (fn [c] [:code c]) (:calls-added x))) " "))
-                        (when (seq (:calls-removed x)) (list "no longer calls " (interpose ", " (map (fn [c] [:code c]) (:calls-removed x))) " "))
-                        (when (seq (:libs-added x)) (list "· new libraries " (tags "tag-ext" (:libs-added x)) " "))
-                        (when (seq (:libs-removed x)) (list "· drops " (tags "tag-del" (:libs-removed x))))])
-                     (when (seq (:callers x))
-                       [:details [:summary.mute "callers"] [:p (interpose ", " (map (fn [c] [:code c]) (:callers x)))]]))))))))
+              x (form-deps d file full)
+              parts (when x (line-parts x))]
+          (when (seq parts)
+            [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))}
+             (interpose [:span.sep " · "] parts)
+             (when (seq (:callers x))
+               [:details.deps-callers [:summary "callers"]
+                [:ul (for [[ns cs] (:callers-by-ns x)] [:li [:code.mute ns] " " (codes cs)])]])]))))))
 
 (decorate/add-header-decorator! ::deps header)
 (decorate/add-form-decorator! ::deps form-line)
