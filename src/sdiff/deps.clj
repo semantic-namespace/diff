@@ -169,6 +169,7 @@
   [repo sha]
   (let [dir (io/file cache-root "src" (str/replace repo "/" "--") sha)]
     (locking (.intern (str repo "@" sha))
+     (when (.exists (io/file dir ".complete")) (.setLastModified (io/file dir ".complete") (System/currentTimeMillis)))
      (when-not (.exists (io/file dir ".complete"))
       (.mkdirs dir)
       (let [{:keys [exit err]} (sh "bash" "-c" (str "gh api repos/" repo "/tarball/" sha " | tar -xz -C " dir
@@ -188,6 +189,30 @@
 
 (reset! github/source-reader tree-reader)
 
+(def ^:private keep-days 14)
+
+(defn sweep!
+  "Removes from `root` what has not been used for `days` days: source trees and
+  dependency snapshots, any source download that never completed and is a day
+  old, and every snapshot of a commit but the newest, since an older one was
+  made under settings that no longer apply. Returns the paths removed."
+  ([] (sweep! cache-root keep-days))
+  ([root days]
+   (let [now (System/currentTimeMillis)
+         old? (fn [f d] (> (- now (.lastModified (io/file f))) (* d 24 3600 1000)))
+         rm (fn [f] (doseq [x (reverse (file-seq (io/file f)))] (.delete ^java.io.File x)) (str f))
+         trees (for [repo (.listFiles (io/file root "src")) :when (.isDirectory repo)
+                     dir (.listFiles repo) :when (.isDirectory dir)
+                     :let [done (io/file dir ".complete")]
+                     :when (if (.exists done) (old? done days) (old? dir 1))]
+                 dir)
+         snaps (sort-by #(- (.lastModified %)) (filter #(.endsWith (.getName %) ".edn") (or (seq (.listFiles (io/file root "deps"))) [])))
+         by-commit (group-by #(second (re-find #"^(.*-[0-9a-f]{40})-" (.getName %))) snaps)
+         stale (concat (mapcat rest (vals by-commit)) (filter #(old? % days) (map first (vals by-commit))))]
+     (vec (concat (map rm trees) (map rm (distinct stale)))))))
+
+(defonce ^:private swept-on-start (delay (future (sweep!))))
+
 (defonce ^:private snapshots (atom {}))
 
 (defn snapshot
@@ -198,8 +223,8 @@
         f (io/file cache-root "deps" (str (str/replace repo "/" "--") "-" sha "-" (Math/abs (hash k)) ".edn"))]
     (or (@snapshots k)
         (let [g (if (.exists f)
-                  (edn/read-string (slurp f))
-                  (let [g (graph (source-dir repo sha) config)] (io/make-parents f) (spit f (pr-str g)) g))]
+                  (do (.setLastModified f (System/currentTimeMillis)) (edn/read-string (slurp f)))
+                  (let [g (graph (source-dir repo sha) config)] (io/make-parents f) (spit f (pr-str g)) (future (sweep!)) g))]
           (swap! snapshots assoc k g)
           g))))
 
@@ -303,6 +328,7 @@
   "Base and head snapshots for a report, or `{:error msg}`."
   [report]
   (when (enabled? report)
+    @swept-on-start
     (let [{:keys [repo]} (:pr report) k [repo (:base report) (:head report)]]
       (or (@per-report k)
           (let [with-callers (fn [g] (assoc g :callers (merge-with into (reverse-of (:calls g)) (reverse-of (:may g)))))

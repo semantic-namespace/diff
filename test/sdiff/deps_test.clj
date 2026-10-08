@@ -57,3 +57,20 @@
     (is (some #(and (= 'app.q (:to %)) (= 'q (:alias %))) (:namespace-usages a)))
     (is (some #(= 'app.core (:name %)) (:namespace-definitions a)))
     (is (not-any? #(= "src/app/pg.clj" (:filename %)) (:namespace-usages a)) "only the PR's files")))
+
+(deftest the-cache-keeps-only-what-is-in-use
+  (let [root (.toFile (java.nio.file.Files/createTempDirectory "cache" (make-array java.nio.file.attribute.FileAttribute 0)))
+        day (* 24 3600 1000) now (System/currentTimeMillis)
+        put (fn [p age] (let [f (io/file root p)] (io/make-parents f) (spit f "") (.setLastModified f (- now (* age day))) f))
+        sha #(apply str (repeat 40 %))]
+    (put (str "src/o--r/" (sha "a") "/.complete") 30)
+    (put (str "src/o--r/" (sha "b") "/.complete") 1)
+    (.setLastModified (.getParentFile (put (str "src/o--r/" (sha "c") "/x.clj") 2)) (- now (* 2 day)))
+    (put (str "deps/o--r-" (sha "b") "-1.edn") 3)
+    (put (str "deps/o--r-" (sha "b") "-2.edn") 1)
+    (put (str "deps/o--r-" (sha "a") "-1.edn") 30)
+    (deps/sweep! root 14)
+    (is (not (.exists (io/file root "src/o--r" (sha "a")))) "unused for a month")
+    (is (.exists (io/file root "src/o--r" (sha "b"))) "used yesterday")
+    (is (not (.exists (io/file root "src/o--r" (sha "c")))) "a download that never completed")
+    (is (= #{(str "o--r-" (sha "b") "-2.edn")} (set (map #(.getName %) (.listFiles (io/file root "deps"))))) "the newest snapshot of a commit in use")))
