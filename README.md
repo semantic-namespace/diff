@@ -25,18 +25,19 @@ removal and an addition.
 
 ## What it looks like
 
-The report page of a pull request of
-[semantic-namespace/atlas](https://github.com/semantic-namespace/atlas/pull/7):
-files by verdict, each changed form with its changes named by path, a comment
-button and a Viewed tick per form, the review panel at the bottom right.
+A pull request of [metosin/malli](https://github.com/metosin/malli/pull/1288),
+ordered by risk. Each changed form is one row: a one-line summary of what
+changed, at most one risk tag (new I/O, a changed signature, or how many forms
+in other namespaces call it), its file and a Viewed box. One row is open at a
+time, showing its head source with the changes marked; base, callers and
+change paths open on demand. `j`/`k` move, `v` marks viewed and opens the next,
+and the review bar at the bottom posts the review to GitHub.
 
-![The report page](docs/img/report.png)
+![Ordered by risk](docs/img/report.png)
 
-A view over the same pull request, composed by a reviewer or a model: sections
-with a claim each, the forms and changes they rest on, and everything else
-folded at the end.
+The same pull request ordered by file.
 
-![A view](docs/img/view.png)
+![Ordered by file](docs/img/file.png)
 
 ## Use
 
