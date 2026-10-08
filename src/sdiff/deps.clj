@@ -155,6 +155,10 @@
     {:forms forms
      :calls (relm calls) :may (relm may) :ext (relm ext) :io (relm io)
      :ns-deps (reduce (fn [m {:keys [from to]}] (update m (str from) (fnil conj #{}) (str to))) {} (:namespace-usages a))
+     :ns-of-file (into {} (for [[f n] ns-of] [(rel f) n]))
+     :aliases (vec (for [{:keys [filename to alias]} (:namespace-usages a) :when alias]
+                     {:file (rel filename) :to (str to) :alias (str alias)}))
+     :kw-ns (reduce (fn [m {:keys [filename ns]}] (if ns (update m (rel filename) (fnil conj #{}) (str ns)) m)) {} (:keywords a))
      :project project}))
 
 (def ^:private cache-root (io/file (System/getProperty "user.home") ".cache" "sdiff"))
@@ -177,7 +181,7 @@
   "The dependency graph of `repo` at `sha`, computed once and kept on disk."
   [repo sha]
   (let [config (config-for repo)
-        k [repo sha (:hash config) (map first @bridges)]
+        k [repo sha (:hash config) (map first @bridges) 2]
         f (io/file cache-root "deps" (str (str/replace repo "/" "--") "-" sha "-" (Math/abs (hash k)) ".edn"))]
     (or (@snapshots k)
         (let [g (if (.exists f)
@@ -293,6 +297,19 @@
                        (catch Exception e {:error (ex-message e)}))]
             (swap! per-report assoc k d)
             d)))))
+
+(defn names-analysis
+  "What `sdiff.names/table` needs about the PR's files, taken from the base and
+  head snapshots instead of a second clj-kondo run, or nil when the snapshots
+  predate it."
+  [{:keys [base head]} report]
+  (when (and (:aliases base) (:aliases head))
+    (let [paths (set (map :path (:clj report)))
+          in-pr (fn [k snap] (filter #(paths (k %)) snap))]
+      {:namespace-definitions (for [snap [base head] [f n] (:ns-of-file snap) :when (paths f)] {:name (symbol n)})
+       :namespace-usages (for [snap [base head] u (in-pr :file (:aliases snap))]
+                           {:to (symbol (:to u)) :alias (symbol (:alias u)) :filename (:file u)})
+       :keywords (for [snap [base head] [f nss] (:kw-ns snap) :when (paths f) n nss] {:ns (symbol n)})})))
 
 (defn- tag [cls x & [t]] [:span.tag {:class cls :title t} (str x)])
 

@@ -49,3 +49,11 @@
 (deftest a-test-namespace-requiring-code-is-not-new-coupling
   (let [d {:head {:forms {["test/a_test.clj" 1] {:ns "a-test" :test true}}}}]
     (is (= [["a" "b"]] (#'deps/couplings d [{:ns "a" :internal-added ["b"]} {:ns "a-test" :internal-added ["a"]}])))))
+
+(deftest the-snapshot-carries-what-short-names-need
+  (let [g (deps/graph (project) deps/defaults)
+        report {:clj [{:path "src/app/core.clj"} {:path "src/app/use.clj"}]}
+        a (deps/names-analysis {:base g :head g} report)]
+    (is (some #(and (= 'app.q (:to %)) (= 'q (:alias %))) (:namespace-usages a)))
+    (is (some #(= 'app.core (:name %)) (:namespace-definitions a)))
+    (is (not-any? #(= "src/app/pg.clj" (:filename %)) (:namespace-usages a)) "only the PR's files")))

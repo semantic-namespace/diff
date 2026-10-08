@@ -56,10 +56,13 @@
 (defn table
   "`{:paths {full short} :nss {full short}}` for a report. Namespaces and their
   aliases come from clj-kondo's analysis of the PR's sources when it is
-  available, else from reading the `ns` forms."
-  [{:keys [clj other] :as report}]
-  (let [analysis (kondo/analyse (into {} (for [f clj s [:new :old] :when (seq (s f))]
-                                            [(str (name s) "/" (:path f)) (s f)])))
+  available, else from reading the `ns` forms. `analysis`, when given, is used
+  instead of running clj-kondo."
+  ([report] (table report nil))
+  ([{:keys [clj other] :as report} analysis]
+  (let [analysis (or analysis
+                     (kondo/analyse (into {} (for [f clj s [:new :old] :when (seq (s f))]
+                                               [(str (name s) "/" (:path f)) (s f)]))))
         test? (fn [f] (re-find #"(^|/)test/|_test\.clj" (:path f)))
         srcs-of (fn [fs] (for [f fs s [(:old f) (:new f)] :when (seq s)] s))
         srcs (srcs-of clj)
@@ -73,7 +76,7 @@
         ns-short (if analysis (from-analysis analysis clj) (choose nss alias-of))
         paths (vec (distinct (concat (map :path clj) (map :path other))))]
     {:paths (into {} (remove (fn [[k v]] (= k v)) (unique-suffixes paths #"/" "/")))
-     :nss (into {} (remove (fn [[k v]] (= k v)) ns-short))}))
+     :nss (into {} (remove (fn [[k v]] (= k v)) ns-short))})))
 
 (defn- replacer [{:keys [paths nss]}]
   (let [ps (sort-by (comp - count key) paths)

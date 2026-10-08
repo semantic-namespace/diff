@@ -20,3 +20,12 @@
          (html/status-text (merge {:state "open" :author "x" :viewer "me"} (github/standing reviews "me")))))
   (is (= "merged 2026-10-04 · your own PR"
          (html/status-text {:state "merged" :merged-at "2026-10-04" :author "me" :viewer "me"}))))
+
+(deftest a-recent-answer-is-reused
+  (let [calls (atom 0) f #(swap! calls inc)]
+    (#'github/within [:r 1 :t] 60000 f)
+    (#'github/within [:r 1 :t] 60000 f)
+    (is (= 1 @calls))
+    (github/forget! :r 1)
+    (#'github/within [:r 1 :t] 60000 f)
+    (is (= 2 @calls) "forgetting a pull request reads it afresh")))

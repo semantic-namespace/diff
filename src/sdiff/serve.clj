@@ -91,7 +91,11 @@
 
 (defn- names-of [r]
   (let [k [(get-in r [:pr :repo]) (:num r) (:head r)]]
-    (or (@names-cache k) (let [t (names/table r)] (swap! names-cache assoc k t) t))))
+    (or (@names-cache k)
+        (let [d (sdiff.deps/data r)
+              t (names/table r (when (and d (not (:error d))) (sdiff.deps/names-analysis d r)))]
+          (swap! names-cache assoc k t)
+          t))))
 
 (defn- pr-text [ref grouping]
   (let [r (github/cached-report ref)
@@ -174,7 +178,8 @@
           (let [{:keys [repo num]} (:pr r)
                 res (json/parse-string (github/gh ["api" "-X" "POST" (str "repos/" repo "/pulls/" num "/reviews") "--input" "-"]
                                                   :in (json/generate-string payload))
-                                       true)]
+                                       true)
+                _ (github/forget! repo num)]
             (json-response 200 {:state (:state res) :url (:html_url res) :placed placed}))))
       (catch Exception e (json-response 400 {:error (ex-message e)})))))
 

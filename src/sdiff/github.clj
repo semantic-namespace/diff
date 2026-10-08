@@ -34,10 +34,30 @@
   (try (gh ["api" "-H" "Accept: application/vnd.github.raw" (str "repos/" repo "/contents/" (encode-path path) "?ref=" ref)])
        (catch Exception _ "")))
 
+(defonce ^:private recent (atom {}))
+
+(defn- within
+  "`(f)`, or its value from the last `ms` milliseconds under `k`."
+  [k ms f]
+  (let [[at v] (@recent k) now (System/currentTimeMillis)]
+    (if (and at (< (- now at) ms))
+      v
+      (let [v (f)] (swap! recent assoc k [now v]) v))))
+
+(defn forget!
+  "Drops what is remembered about a pull request, so its state is read afresh."
+  [repo num]
+  (swap! recent (fn [m] (into {} (remove (fn [[k]] (= [repo num] (take 2 k))) m)))))
+
+(def ^:private fresh-ms 60000)
+
+(defn- pull [repo num] (within [repo num :pull] fresh-ms #(api-json (str "repos/" repo "/pulls/" num))))
+
 (defn pr-info [{:keys [repo num]}]
-  (let [p (api-json (str "repos/" repo "/pulls/" num))
+  (let [p (pull repo num)
         base (get-in p [:base :sha]) head (get-in p [:head :sha])
-        mb (:sha (:merge_base_commit (api-json (str "repos/" repo "/compare/" base "..." head))))]
+        mb (within [repo num :merge-base base head] Long/MAX_VALUE
+                   #(:sha (:merge_base_commit (api-json (str "repos/" repo "/compare/" base "..." head)))))]
     {:repo repo :num num :title (:title p) :url (:html_url p) :author (get-in p [:user :login])
      :base mb :head head :state (:state p)}))
 
@@ -56,10 +76,15 @@
   [pr-ref]
   (let [pr (pr-info (if (map? pr-ref) pr-ref (parse-pr pr-ref)))
         pr-fs (pr-files pr)
-        clj (for [{:keys [filename previous_filename patch] st :status} pr-fs :when (core/clj? filename)]
-              (assoc (core/file-report filename
-                                       (blob (:repo pr) (:base pr) (or previous_filename filename))
-                                       (blob (:repo pr) (:head pr) filename))
+        clj-fs (filter #(core/clj? (:filename %)) pr-fs)
+        sources (->> clj-fs
+                     (mapcat (fn [{:keys [filename previous_filename]}]
+                               [[(:base pr) (or previous_filename filename)] [(:head pr) filename]]))
+                     (partition-all 8)
+                     (mapcat (fn [batch] (mapv deref (mapv (fn [[ref path]] (future (blob (:repo pr) ref path))) batch))))
+                     (partition 2))
+        clj (for [[{:keys [filename patch] st :status} [old new]] (map vector clj-fs sources)]
+              (assoc (core/file-report filename old new)
                      :status (status st "M")
                      :hunks (hunks/right-ranges patch)))
         {:keys [files renames]} (core/rollup-renames (vec clj))]
@@ -89,11 +114,12 @@
 
 (defn pr-status
   "Where the PR stands right now: open, draft, closed or merged, who wrote it,
-  who is looking, and each reviewer's standing. Fetched on every page load,
-  since none of it changes the head commit."
+  who is looking, and each reviewer's standing. Read afresh at most once a
+  minute, and right after a review is posted."
   [{:keys [repo num]}]
-  (let [p (api-json (str "repos/" repo "/pulls/" num))
-        reviews (api-json (str "repos/" repo "/pulls/" num "/reviews?per_page=100"))]
+  (let [p (future (pull repo num))
+        reviews (within [repo num :reviews] fresh-ms #(api-json (str "repos/" repo "/pulls/" num "/reviews?per_page=100")))
+        p @p]
     (merge {:state (cond (:merged p) "merged" (:draft p) "draft" :else (:state p))
             :merged-at (some-> (:merged_at p) (subs 0 10))
             :author (get-in p [:user :login]) :viewer @viewer-login}
