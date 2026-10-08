@@ -170,3 +170,7 @@ kbd{font:10.5px 'IBM Plex Mono',monospace;border:1px solid var(--line);border-ra
 .sd-seg button.on{background:var(--sem);color:var(--bg);border-color:transparent}
 .sd-seg button:disabled{opacity:.4;cursor:not-allowed}
 @media (max-width:700px){.shell-page section.form>h3{grid-template-columns:8px minmax(0,1fr) auto 26px}.shell-page section.form>h3 .sum{display:none}.shell-page section.form.open>:not(h3){margin-left:12px}.sd-bar .sd-keys{display:none}}
+.shell-page section.group section.form>h3{grid-template-columns:8px max-content minmax(0,1fr) auto minmax(0,max-content) 26px}
+.shell-page section.group section.form>h3>.fpath{display:block;flex:none;max-width:26ch;font:11.5px 'IBM Plex Mono',monospace;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+@media (max-width:700px){.shell-page section.group section.form>h3{grid-template-columns:8px minmax(0,1fr) auto 26px}.shell-page section.group section.form>h3>.fpath{display:none}}
+.shell-page section.form>h3 .tag.risk{justify-self:end}

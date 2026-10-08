@@ -288,6 +288,8 @@
   if (shellPage) {
     cards().forEach(sec => {
       const h = sec.querySelector(':scope > h3');
+      const fpath = h.querySelector('.fpath');
+      if (fpath) { fpath.title = sec.dataset.file; const parts = fpath.textContent.split('/'); if (parts.length > 2) fpath.textContent = parts.slice(-2).join('/'); }
       const fname = h.querySelector('.fname');
       if (fname) fname.textContent = shortName(sec.dataset.form);
       h.prepend(el('span', { class: 'dot ' + (sec.dataset.status || 'changed') }));
