@@ -275,6 +275,9 @@
   const filters = [['all', () => true], ['changed', s => s.dataset.status === 'changed'], ['new', s => s.dataset.status === 'new'],
                    ['new I/O', s => !!newIO(s)], ['unviewed', s => formStatus(keyOf(s)) !== 'viewed']];
   let filter = 'all';
+  const railKey = 'sdiff:rail-folded:' + cfg.ref;
+  const railFolded = new Set((() => { try { return JSON.parse(localStorage.getItem(railKey) || '[]'); } catch (e) { return []; } })());
+  const keepRail = () => { try { localStorage.setItem(railKey, JSON.stringify([...railFolded])); } catch (e) {} };
   const groupsOf = () => allOf('article.file, details.view-section, section.view-section').filter(g => g.querySelector('section.form[data-form]'));
   const groupTitle = g => g.matches('article.file') ? g.dataset.file : ((g.querySelector('h2') || {}).textContent || '').trim();
   window.sdShell = () => {
@@ -292,16 +295,35 @@
         el('span', { class: 'bar' }, el('span', { class: 'fill', style: 'width:' + (all.length ? Math.round(100 * viewed / all.length) : 0) + '%' })));
     }
     if (rail) {
-      rail.replaceChildren(...groupsOf().filter(g => !g.hidden).map(g => el('div', { class: 'rg' },
-        el('a', { class: 'rg-t', href: '#' + g.id, title: groupTitle(g) }, groupTitle(g)),
-        ...[...g.querySelectorAll('section.form[data-form]')].filter(s => !s.hidden).map(s => {
+      const shown = groupsOf().filter(g => !g.hidden);
+      const allFolded = shown.length && shown.every(g => railFolded.has(groupTitle(g)));
+      rail.replaceChildren(
+        el('div', { class: 'rail-tools' },
+          el('button', { type: 'button', onclick: () => { shown.forEach(g => allFolded ? railFolded.delete(groupTitle(g)) : railFolded.add(groupTitle(g))); keepRail(); window.sdShell(); } },
+             allFolded ? 'unfold all' : 'fold all')),
+        ...shown.map(g => {
+        const t = groupTitle(g), folded = railFolded.has(t);
+        const forms = [...g.querySelectorAll('section.form[data-form]')].filter(s => !s.hidden);
+        const viewedN = forms.filter(s => formStatus(keyOf(s)) === 'viewed').length;
+        return el('div', { class: 'rg' + (folded ? ' rg-folded' : '') },
+        el('div', { class: 'rg-h' },
+          el('button', { type: 'button', class: 'rg-tog', title: (folded ? 'Unfold' : 'Fold') + '; Alt+click for all groups',
+                         onclick: e => {
+                           if (e.altKey) shown.forEach(x => folded ? railFolded.delete(groupTitle(x)) : railFolded.add(groupTitle(x)));
+                           else if (folded) railFolded.delete(t); else railFolded.add(t);
+                           keepRail(); window.sdShell();
+                         } }, folded ? '▸' : '▾'),
+          el('a', { class: 'rg-t', href: '#' + g.id, title: t }, t),
+          el('span', { class: 'rg-n' }, viewedN + '/' + forms.length)),
+        ...(folded ? [] : forms.map(s => {
           const st = formStatus(keyOf(s));
           return el('a', { class: 'rf' + (st === 'viewed' ? ' seen' : ''), href: '#' + s.id, title: s.dataset.form },
             el('span', { class: 'dot ' + (s.dataset.status || 'changed') }),
             el('span', { class: 'rn' }, s.dataset.form.startsWith('ns ') ? 'ns ' + s.dataset.form.split('.').pop() : s.dataset.form.replace(/^\S+\s+/, '')),
             newIO(s) ? el('span', { class: 'io' }, 'io') : null,
             st === 'viewed' ? el('span', { class: 'ok' }, '✓') : null);
-        }))));
+        })));
+      }));
     }
   };
   document.addEventListener('click', e => {
