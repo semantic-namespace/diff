@@ -298,36 +298,57 @@
 
 (defn- tags [cls xs] (interpose " " (for [x xs] (tag cls (if (keyword? x) (name x) x)))))
 
+(defn- per-form [d report]
+  (for [f (:clj report) :when (= :semantic (:verdict f)) form (:forms f) :let [x (form-deps d f form)] :when x] [f form x]))
+
+(defn- couplings
+  "Project namespaces outside tests that start requiring another project
+  namespace: new coupling between parts of the code."
+  [d requires]
+  (let [test-ns (set (keep (fn [[_ v]] (when (:test v) (:ns v))) (get-in d [:head :forms])))]
+    (for [{:keys [ns internal-added]} requires :when (not (test-ns ns)) to internal-added :when (not (test-ns to))] [ns to])))
+
 (defn header [ctx report]
   (when-let [d (data report)]
     (if (:error d)
       (derived "deps" [:p "Dependency analysis failed: " (:error d)])
-      (let [files (filter #(= :semantic (:verdict %)) (:clj report))
-            per-form (for [f files form (:forms f) :let [x (form-deps d f form)] :when x] [f form x])
+      (let [forms (per-form d report)
             ns-of-path (into {} (for [[[p] v] (concat (get-in d [:base :forms]) (get-in d [:head :forms])) :when (:ns v)] [p (:ns v)]))
-            changed-ns (set (keep #(ns-of-path (:path %)) files))
+            changed-ns (set (keep #(ns-of-path (:path %)) (:clj report)))
             {:keys [requires cycles]} (ns-changes d changed-ns)
             code? (let [re (re-pattern (:test-paths defaults))] (fn [[f]] (not (re-find re (:path f)))))
-            new-io (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:reaches-added x)))) per-form)
-            new-libs (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:libs-added x)))) per-form)
-            widest (take 5 (sort-by (fn [[_ _ x]] (- (count (:callers x)))) (remove (fn [[_ _ x]] (:removed? x)) per-form)))]
+            new-io (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:reaches-added x)))) forms)
+            coupled (couplings d requires)]
         (derived "deps · clj-kondo over the whole repository, base and head; the lines under each form come from the same analysis"
                  [:h5 "Dependencies"]
-                 [:p (count per-form) " changed forms · " (count new-io) " outside tests reach a new kind of I/O · "
-                  (count new-libs) " use a new library · " (count requires) " namespaces change their requires · "
-                  (count cycles) " new namespace cycles"]
-                 (when (seq cycles)
-                   [:p "New cycles: " (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))])
+                 [:p (count forms) " changed forms · " (count new-io) " outside tests reach a new kind of I/O · "
+                  (count coupled) " new dependencies between project namespaces · " (count cycles) " new namespace cycles"]
                  (when (seq new-io)
                    [:ul (for [[_ form x] new-io] [:li [:code (or (defined-keyword (decorate/form-id form)) (decorate/form-id form))] " now reaches " (tags "tag-ext" (:reaches-added x))])])
-                 (when (seq requires)
-                   [:details [:summary "Requires"]
-                    [:ul (for [{:keys [ns added removed]} requires]
-                           [:li [:code ns] (when (seq added) (list " + " (tags "tag-add" added))) (when (seq removed) (list " − " (tags "tag-del" removed)))])]])
-                 (when (seq widest)
-                   [:details [:summary "Most depended on"]
-                    [:ul (for [[f form x] widest]
-                           [:li [:code (decorate/form-id form)] " " [:span.mute (:path f)] " · called from " (count (:callers x)) " forms in " (:caller-ns x) " namespaces"])]]))))))
+                 (when (seq coupled)
+                   [:ul (for [[from to] coupled] [:li [:code from] " now requires " [:code to]])])
+                 (when (seq cycles)
+                   [:p "New cycles: " (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))]))))))
+
+(defn by-callers
+  "Changed forms banded by how many forms outside their own namespace call them,
+  widest first: where a change reaches furthest is where to read first."
+  [_ctx report]
+  (when-let [d (data report)]
+    (when-not (:error d)
+      (let [rows (for [[f form x] (per-form d report)] [[(:path f) (decorate/form-id form)] x])
+            test? (let [re (re-pattern (:test-paths defaults))] (fn [p] (re-find re p)))
+            band (fn [[[p] x]] (let [n (:outside-callers x 0)]
+                                 (cond (:removed? x) (if (pos? (:callers-before x)) 4 5)
+                                       (test? p) 6
+                                       (>= n 10) 0 (>= n 2) 1 (= n 1) 2 :else 3)))
+            titles ["Called from 10 or more forms in other namespaces" "Called from 2 to 9 forms in other namespaces"
+                    "Called from one form in another namespace" "Called only within its own namespace, or not at all"
+                    "Removed, and had callers" "Removed" "In tests"]]
+        (for [[b rs] (sort-by key (group-by band rows))]
+          {:title (titles b)
+           :claim (str (count rs) " form" (when (not= 1 (count rs)) "s") ", most callers first.")
+           :items (vec (for [[[p id]] (sort-by (fn [[_ x]] [(- (:outside-callers x 0)) (- (count (:callers x)))]) rs)] [:form p id]))})))))
 
 (defn- codes [xs] (interpose ", " (map (fn [c] [:code c]) xs)))
 
@@ -368,4 +389,5 @@
                 [:ul (for [[ns cs] (:callers-by-ns x)] [:li [:code.mute ns] " " (codes cs)])]])]))))))
 
 (decorate/add-header-decorator! ::deps header)
+(decorate/add-grouper! :callers "callers" "deps · clj-kondo over the whole repository" by-callers)
 (decorate/add-form-decorator! ::deps form-line)

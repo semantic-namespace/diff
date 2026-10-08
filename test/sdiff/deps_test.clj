@@ -45,3 +45,7 @@
 
 (deftest callers-from-the-same-namespace-alone-are-not-worth-a-line
   (is (empty? (#'deps/line-parts {:callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 1 :outside-callers 0}))))
+
+(deftest a-test-namespace-requiring-code-is-not-new-coupling
+  (let [d {:head {:forms {["test/a_test.clj" 1] {:ns "a-test" :test true}}}}]
+    (is (= [["a" "b"]] (#'deps/couplings d [{:ns "a" :internal-added ["b"]} {:ns "a-test" :internal-added ["a"]}])))))
