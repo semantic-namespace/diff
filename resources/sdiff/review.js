@@ -299,6 +299,33 @@
       h.addEventListener('click', e => { if (e.target.closest('label, button, a')) return; toggleRow(sec); });
     });
   }
+  if (shellPage) {
+    const foldKey = 'sdiff:groups-folded:' + cfg.ref;
+    const folded = new Set((() => { try { return JSON.parse(localStorage.getItem(foldKey) || '[]'); } catch (e) { return []; } })());
+    const keepFolds = () => { try { localStorage.setItem(foldKey, JSON.stringify([...folded])); } catch (e) {} };
+    const groups = allOf('article.file, section.group').filter(g => g.querySelector('section.form[data-form]'));
+    const headOf = g => g.querySelector(':scope > h2, :scope > .glabel');
+    const nameOf = g => g.dataset.file || g.id;
+    const paint = () => {
+      groups.forEach(g => g.classList.toggle('sd-folded', folded.has(nameOf(g))));
+      if (foldAll) foldAll.textContent = groups.length && groups.every(g => folded.has(nameOf(g))) ? 'unfold all' : 'fold all';
+    };
+    const setAll = fold => { groups.forEach(g => fold ? folded.add(nameOf(g)) : folded.delete(nameOf(g))); keepFolds(); paint(); };
+    groups.forEach(g => {
+      const h = headOf(g); if (!h) return;
+      h.classList.add('g-fold');
+      h.title = 'Fold or unfold; Alt+click for all';
+      h.addEventListener('click', e => {
+        if (e.target.closest('a, button, label')) return;
+        if (e.altKey) setAll(!folded.has(nameOf(g)));
+        else { folded.has(nameOf(g)) ? folded.delete(nameOf(g)) : folded.add(nameOf(g)); keepFolds(); paint(); }
+      });
+    });
+    const sw = document.querySelector('.row2 .group-switch');
+    const foldAll = groups.length > 1 && sw ? el('button', { type: 'button', class: 'fold-all-btn', onclick: () => setAll(!groups.every(g => folded.has(nameOf(g)))) }, 'fold all') : null;
+    if (foldAll) sw.after(foldAll);
+    paint();
+  }
   let openSec = null;
   function toolbar(sec) {
     const d = depsOf(sec), paths = sec.querySelectorAll(':scope > ul.changes > li').length, two = sec.querySelectorAll('.panes .pane').length > 1;
