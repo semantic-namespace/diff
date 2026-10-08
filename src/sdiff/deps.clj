@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [sdiff.core :as core]
             [sdiff.decorate :as decorate :refer [derived]]
+            [sdiff.github :as github]
             [sdiff.kondo :as kondo]
             [sdiff.state :as state]))
 
@@ -167,13 +168,25 @@
   "The repository's Clojure sources at `sha`, fetched once from GitHub with `gh`."
   [repo sha]
   (let [dir (io/file cache-root "src" (str/replace repo "/" "--") sha)]
-    (when-not (.exists (io/file dir ".complete"))
+    (locking (.intern (str repo "@" sha))
+     (when-not (.exists (io/file dir ".complete"))
       (.mkdirs dir)
       (let [{:keys [exit err]} (sh "bash" "-c" (str "gh api repos/" repo "/tarball/" sha " | tar -xz -C " dir
                                                    " --strip-components=1 --wildcards '*.clj*'"))]
         (when-not (zero? exit) (throw (ex-info (str "could not fetch " repo "@" sha ": " err) {})))
-        (spit (io/file dir ".complete") "")))
+        (spit (io/file dir ".complete") ""))))
     (.getCanonicalPath dir)))
+
+(defn- tree-reader
+  "Clojure sources read from the commit's source tree, which the dependency
+  analysis fetches anyway, so the diff needs no call per file. Other files, and
+  everything when the analysis is switched off, are left to GitHub."
+  [repo sha path]
+  (when (and path (re-find #"\.clj[cs]?$" path) (not (:skip-deps (state/settings))))
+    (let [f (io/file (source-dir repo sha) path)]
+      (if (.isFile f) (slurp f) ""))))
+
+(reset! github/source-reader tree-reader)
 
 (defonce ^:private snapshots (atom {}))
 

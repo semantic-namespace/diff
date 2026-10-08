@@ -28,6 +28,12 @@
 
 (defn- encode-path [p] (str/join "/" (map #(java.net.URLEncoder/encode ^String % "UTF-8") (str/split p #"/"))))
 
+(defonce source-reader
+  ^{:doc "`(fn [repo sha path] content-or-nil)`: where a file's content can be read
+  without asking GitHub for it, such as a source tree already on disk. nil means
+  the reader has no answer, and the file is fetched as usual."}
+  (atom nil))
+
 (defn blob
   "File content at `ref`, or \"\" when the file does not exist there."
   [repo ref path]
@@ -81,7 +87,12 @@
                      (mapcat (fn [{:keys [filename previous_filename]}]
                                [[(:base pr) (or previous_filename filename)] [(:head pr) filename]]))
                      (partition-all 8)
-                     (mapcat (fn [batch] (mapv deref (mapv (fn [[ref path]] (future (blob (:repo pr) ref path))) batch))))
+                     (mapcat (fn [batch]
+                               (mapv deref (mapv (fn [[ref path]]
+                                                   (future (or (when-let [f @source-reader]
+                                                                 (try (f (:repo pr) ref path) (catch Exception _ nil)))
+                                                               (blob (:repo pr) ref path))))
+                                                 batch))))
                      (partition 2))
         clj (for [[{:keys [filename patch] st :status} [old new]] (map vector clj-fs sources)]
               (assoc (core/file-report filename old new)
