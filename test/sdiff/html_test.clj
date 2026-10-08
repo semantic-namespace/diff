@@ -59,3 +59,15 @@
         by-name (into {} (map (juxt #(second (:id %)) identity)) (:forms fr))]
     (is (= "new function" (html/summary (by-name "h"))))
     (is (re-find #"^adds y" (html/summary (by-name "f"))))))
+
+(deftest a-removed-form-reads-red-and-a-new-one-green
+  (let [fr (core/file-report "a.clj" "(ns a)\n(defn gone [x]\n  (inc x))\n" "(ns a)\n(defn fresh [x]\n  (dec x))\n")
+        view (fn [status] (str (hc/html (html/form-view fr (first (filter #(= status (some-> % :changes first :op)) (:forms fr)))))))
+        lines (fn [h cls] (count (re-seq (re-pattern (str "class=\"ln " cls "\"")) h)))]
+    (is (= 2 (lines (view :removed-form) "ln-del")))
+    (is (= 2 (lines (view :added-form) "ln-add")))))
+
+(deftest a-line-only-base-has-reads-removed
+  (let [h (page-of "(ns a)\n(defn f [x]\n  (a x)\n  (gone x)\n  (b x))\n" "(ns a)\n(defn f [x]\n  (a x)\n  (b x))\n")
+        [base] (rest (str/split h #"class=\"pane\""))]
+    (is (re-find #"class=\"ln ln-del\"><span class=\"gut\">4</span>" base))))

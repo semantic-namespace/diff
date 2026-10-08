@@ -172,6 +172,12 @@
     [:div.ln {:class (:tint l)} [:span.gut (:n l)] [:span.cd (seq (:h l))]]
     [:div.ln.spacer [:span.gut] [:span.cd " "]]))
 
+(defn- tinted
+  "`l` tinted `tint` when it has text and no tint of its own: a line only one
+  side has reads as wholly removed or added."
+  [l tint]
+  (cond-> l (and l (nil? (:tint l)) (not (str/blank? (:text l)))) (assoc :tint tint)))
+
 (defn- with-meta-run [[tag attrs & kids] id]
   (into [tag (-> attrs (update :class #(str/trim (str % " hid"))) (assoc :data-in id))] kids))
 
@@ -202,11 +208,11 @@
             changed? (fn [[i j]] (or (nil? i) (nil? j) (:changed? (a i)) (:changed? (b j))))
             items (tag-runs (elide pairs changed? 2))]
         [:div.panes
-         (pane "base" (sha :base) items (fn [[i]] (when i (a i))))
-         (pane "head" (sha :head) items (fn [[_ j]] (when j (b j))))])
+         (pane "base" (sha :base) items (fn [[i j]] (when i (cond-> (a i) (nil? j) (tinted "ln-del")))))
+         (pane "head" (sha :head) items (fn [[i j]] (when j (cond-> (b j) (nil? i) (tinted "ln-add")))))])
       (or node-old node-new)
       (let [[src node side label k] (if node-new [new node-new :new "head · new form" :head] [old node-old :old "base · removed" :base])
-            ls (form-lines src node (marks-for side changes))
+            ls (mapv #(tinted % (if (= side :old) "ln-del" "ln-add")) (form-lines src node (marks-for side changes)))
             items (tag-runs (elide (vec (range (count ls))) (constantly false) 0))]
         [:div.panes.single (pane label (sha k) items ls)]))))
 
