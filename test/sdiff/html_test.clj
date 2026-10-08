@@ -53,3 +53,9 @@
   (let [old "(ns a)\n(defn f [x]\n  (a x)\n  (b x))\n"
         h (page-of old (str/replace old "(a x)" "(a y)"))]
     (is (not (str/includes? h "ln spacer")))))
+
+(deftest a-form-is-summed-up-in-a-few-words
+  (let [fr (core/file-report "a.clj" "(ns a)\n(defn f [x] (g x))\n" "(ns a)\n(defn f [x y] (g x))\n(defn h [] 1)\n")
+        by-name (into {} (map (juxt #(second (:id %)) identity)) (:forms fr))]
+    (is (= "new function" (html/summary (by-name "h"))))
+    (is (re-find #"^adds y" (html/summary (by-name "f"))))))

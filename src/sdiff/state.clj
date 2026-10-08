@@ -8,6 +8,9 @@
 (def default-settings
   {:show-inferred true
    :skip-deps false
+   :default-order "risk"
+   :always-base false
+   :key-hints true
    :fold-viewed-forms true
    :fold-viewed-files true
    :mark-file-on-github false

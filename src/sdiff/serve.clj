@@ -106,12 +106,14 @@
              (names/legend-text used) "\n"
              (names/shorten-text used body))))))
 
+(def ^:private orders [["risk" "risk"] ["file" "file"] ["calls" "calls"]])
+
 (defn- switcher [ref current]
-  (let [href (fn [g] (str "/pr?ref=" (java.net.URLEncoder/encode ref "UTF-8") (when g (str "&group=" (name g)))))]
-    [:nav.group-switch "Group by "
-     [:a {:href (href nil) :class (when-not current "on")} "file"]
-     (for [{:keys [key label]} @decorate/groupers]
-       [:a {:href (href key) :class (when (= (name key) current) "on")} label])]))
+  (let [href (fn [g] (str "/pr?ref=" (java.net.URLEncoder/encode ref "UTF-8") "&group=" g))
+        known (set (map (comp name :key) @decorate/groupers))]
+    [:nav.group-switch "Order "
+     (for [[g label] orders :when (or (= "file" g) (known g))]
+       [:a {:href (href g) :class (when (= g current) "on")} label])]))
 
 (defn- pr-page [ref view-name grouping]
   (let [r (github/cached-report ref)
@@ -120,13 +122,17 @@
         r (assoc r :status (:status config))
         review (state/review repo num)
         ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
+        grouping (or grouping (when-not view-name (:default-order (state/settings))))
+        grouping (when-not (= "file" grouping) grouping)
         v (cond view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name)))
-                grouping (decorate/grouping ctx grouping))]
+                grouping (some-> (decorate/grouping ctx grouping) (assoc :compact true)))
+        grouping (if (and grouping (not view-name) (empty? (:sections v))) nil grouping)
+        v (if (or view-name grouping) v nil)]
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
                  :names (names-of r)
                  :shell true
-                 :before (switcher ref (when-not view-name grouping))
+                 :before (switcher ref (when-not view-name (or grouping "file")))
                  :body (cond v (view/render r v)
                              view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))]
                              grouping [:p.deco.deco-problem (str "no grouping named " (pr-str grouping))])

@@ -1,7 +1,7 @@
 (async () => {
   const cfg = JSON.parse(document.getElementById('sdiff-config').textContent);
   const remote = await fetch('/state?ref=' + encodeURIComponent(cfg.ref)).then(r => r.json()).catch(() => ({}));
-  const settings = Object.assign({ 'show-inferred': true, 'fold-viewed-forms': true, 'fold-viewed-files': true, 'mark-file-on-github': false, 'fold-cosmetic-files': false, 'skip-deps': false }, remote.settings);
+  const settings = Object.assign({ 'show-inferred': true, 'fold-viewed-forms': true, 'fold-viewed-files': true, 'mark-file-on-github': false, 'fold-cosmetic-files': false, 'skip-deps': false, 'always-base': false, 'key-hints': true }, remote.settings);
   const state = Object.assign({ forms: {}, notes: [], verdict: 'comment', summary: '' }, remote.review);
   const legacyKey = 'sdiff:' + cfg.ref + ':' + cfg.head;
   try {
@@ -47,7 +47,8 @@
     });
   });
 
-  const levels = [
+  const shellPage = document.body.classList.contains('shell-page');
+  const levels = shellPage ? [] : [
     { sel: 'article.file', head: ':scope > h2' },
     { sel: 'section.form', head: ':scope > h3' }];
   const allOf = sel => [...document.querySelectorAll(sel)].filter(x => !x.closest('.sd-panel'));
@@ -120,6 +121,7 @@
     b.cb.checked = st === 'viewed';
     b.label.classList.toggle('sd-dismissed', st === 'changed');
     b.label.title = st === 'changed' ? 'The code changed since you marked this form viewed' : 'Viewed (kept on this machine)';
+    b.sec.classList.toggle('seen', st === 'viewed');
   }
   function fileComplete(file) {
     const ks = Object.keys(formBoxes).filter(k => formBoxes[k].file === file);
@@ -138,7 +140,7 @@
       if (cb.checked) { state.forms[k] = info.fp; if (info.was) delete state.forms[info.was]; }
       else { delete state.forms[k]; if (info.was) delete state.forms[info.was]; }
       renderForm(k); save(); render();
-      if (cb.checked && settings['fold-viewed-forms']) sec.classList.add('sd-folded');
+      if (cb.checked && settings['fold-viewed-forms'] && !shellPage) sec.classList.add('sd-folded');
       if (cb.checked) fileComplete(sec.dataset.file);
     });
     sec.querySelector(':scope > h3').append(label);
@@ -147,7 +149,7 @@
   });
   function applyFolds() {
     document.body.classList.toggle('sd-hide-inferred', !settings['show-inferred']);
-    if (settings['fold-viewed-forms']) Object.entries(formBoxes).forEach(([k, b]) => { if (formStatus(k) === 'viewed') b.sec.classList.add('sd-folded'); });
+    if (settings['fold-viewed-forms'] && !shellPage) Object.entries(formBoxes).forEach(([k, b]) => { if (formStatus(k) === 'viewed') b.sec.classList.add('sd-folded'); });
     if (settings['fold-cosmetic-files']) allOf('article.file.comments-only, article.file.whitespace-only, article.file.rename-only').forEach(a => a.classList.add('sd-folded'));
   }
   applyFolds();
@@ -195,7 +197,9 @@
             ['fold-viewed-files', 'Fold files viewed on GitHub'],
             ['mark-file-on-github', 'Mark a file viewed on GitHub when all its forms are viewed'],
             ['fold-cosmetic-files', 'Fold files that only change formatting, comments or names'],
-            ['skip-deps', 'Skip dependency analysis (it fetches the whole repository at base and head)']].map(([k, label]) => {
+            ['skip-deps', 'Skip dependency analysis (it fetches the whole repository at base and head)'],
+            ['always-base', 'Always show base side by side'],
+            ['key-hints', 'Show keyboard hints']].map(([k, label]) => {
           const cb = el('input', { type: 'checkbox' });
           cb.checked = !!settings[k];
           cb.addEventListener('change', () => {
@@ -208,8 +212,16 @@
       el('div', { class: 'sd-row' },
         el('button', { type: 'button', onclick: preview }, 'Preview'), postBtn),
       out));
-  const slot = document.getElementById('sd-panel-slot');
-  if (slot) { slot.append(panel); panel.classList.add('sd-docked', 'sd-open'); } else document.body.append(panel);
+  document.body.append(panel);
+  if (shellPage) {
+    panel.classList.add('sd-bar');
+    const head = panel.querySelector('.sd-head'), actions = panel.querySelector('.sd-body > .sd-row');
+    head.replaceChildren(el('strong', {}, '▴ Review'), count,
+      settings['key-hints'] ? el('span', { class: 'sd-keys' }, el('kbd', {}, 'j'), el('kbd', {}, 'k'), ' move · ', el('kbd', {}, 'v'), ' viewed, next · ',
+                                                         el('kbd', {}, 'b'), ' base · ', el('kbd', {}, 'c'), ' comment') : null,
+      el('span', { class: 'sd-spacer' }), actions);
+    actions.addEventListener('click', e => e.stopPropagation());
+  }
   postBtn.addEventListener('click', postReview);
 
   function changed() { previewed = null; postBtn.disabled = true; out.textContent = ''; save(); render(); }
@@ -261,70 +273,99 @@
     } catch (e) { out.textContent = 'Post failed: ' + e.message; postBtn.disabled = false; }
   }
 
-  const rail = document.getElementById('sd-rail');
-  const filtersBox = document.getElementById('sd-filters');
   const progress = document.getElementById('sd-progress');
   const cards = () => allOf('section.form[data-form]');
   const keyOf = sec => sec.dataset.file + '|' + sec.dataset.form;
-  const newIO = sec => { const d = sec.querySelector('.deps-line[data-new-io]'); return d ? d.dataset.newIo : null; };
-  cards().forEach(sec => {
-    const io = newIO(sec); if (!io) return;
-    const h = sec.querySelector(':scope > h3'), fp = h.querySelector('.fpath');
-    h.insertBefore(el('span', { class: 'tag tag-ext' }, 'reaches ' + io), fp);
+  const depsOf = sec => sec.querySelector('.deps-line');
+  const riskOf = sec => {
+    const d = depsOf(sec); if (!d) return null;
+    if (d.dataset.newIo) return ['tag-ext', 'new I/O'];
+    if (d.dataset.signature) return ['tag-sem', 'signature'];
+    if (+d.dataset.outside >= 10) return ['tag-sem', d.dataset.callers + ' callers'];
+    return null;
+  };
+  const shortName = f => f.startsWith('ns ') ? 'ns ' + f.split('.').pop() : f.replace(/^\S+\s+/, '');
+  if (shellPage) {
+    cards().forEach(sec => {
+      const h = sec.querySelector(':scope > h3');
+      const fname = h.querySelector('.fname');
+      if (fname) fname.textContent = shortName(sec.dataset.form);
+      h.prepend(el('span', { class: 'dot ' + (sec.dataset.status || 'changed') }));
+      const r = riskOf(sec);
+      const sum = h.querySelector('.sum');
+      if (sum) sum.after(r ? el('span', { class: 'tag risk ' + r[0] }, r[1]) : el('span', { class: 'risk' }));
+      h.addEventListener('click', e => { if (e.target.closest('label, button, a')) return; toggleRow(sec); });
+    });
+  }
+  let openSec = null;
+  function toolbar(sec) {
+    const d = depsOf(sec), paths = sec.querySelectorAll(':scope > ul.changes > li').length, two = sec.querySelectorAll('.panes .pane').length > 1;
+    const tog = (label, cls, enabled) => {
+      if (!enabled) return null;
+      const b = el('button', { type: 'button', class: 'tog' + (sec.classList.contains(cls) ? ' on' : '') }, label);
+      b.addEventListener('click', () => { sec.classList.toggle(cls); b.classList.toggle('on', sec.classList.contains(cls)); });
+      return b;
+    };
+    const base = { file: sec.dataset.file, form: sec.dataset.form };
+    return el('div', { class: 'tbar' },
+      el('span', { class: 'tpath' }, sec.dataset.file),
+      tog('Base', 'show-base', two),
+      tog('Callers ' + (d ? d.dataset.callers : ''), 'show-callers', !!d),
+      tog('Change paths ' + paths, 'show-paths', paths > 0),
+      el('span', { class: 'sd-spacer' }),
+      el('button', { type: 'button', class: 'tact', onclick: () => openEditor(sec.querySelector('.tbar'), base) }, 'Comment ', el('kbd', {}, 'c')),
+      el('button', { type: 'button', class: 'tact go', onclick: () => viewedNext(sec) }, 'Viewed, next ', el('kbd', {}, 'v')));
+  }
+  function toggleRow(sec, open, quiet) {
+    const want = open === undefined ? !sec.classList.contains('open') : open;
+    if (openSec && openSec !== sec) openSec.classList.remove('open');
+    sec.classList.toggle('open', want);
+    if (want) {
+      if (!sec.querySelector(':scope > .tbar')) {
+        if (settings['always-base']) sec.classList.add('show-base');
+        sec.querySelector(':scope > h3').after(toolbar(sec));
+      }
+      openSec = sec;
+      const top = sec.getBoundingClientRect().top;
+      if (!quiet && (top < 70 || top > window.innerHeight * .6)) window.scrollTo({ top: window.scrollY + top - 70 });
+    } else if (openSec === sec) openSec = null;
+  }
+  const visibleCards = () => cards().filter(s => s.offsetParent !== null);
+  function step(dir) {
+    const cs = visibleCards(); if (!cs.length) return;
+    const i = openSec ? cs.indexOf(openSec) : -1;
+    const next = cs[Math.max(0, Math.min(cs.length - 1, i + dir))];
+    if (next) toggleRow(next, true);
+  }
+  function viewedNext(sec) {
+    const b = formBoxes[keyOf(sec)];
+    if (b && !b.cb.checked) { b.cb.checked = true; b.cb.dispatchEvent(new Event('change')); }
+    const cs = visibleCards(), i = cs.indexOf(sec);
+    const next = cs.slice(i + 1).concat(cs.slice(0, i)).find(s => formStatus(keyOf(s)) !== 'viewed');
+    if (next) toggleRow(next, true); else toggleRow(sec, false);
+  }
+  if (shellPage) document.addEventListener('keydown', e => {
+    if (e.target.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'j') step(1);
+    else if (e.key === 'k') step(-1);
+    else if (e.key === 'v' && openSec) viewedNext(openSec);
+    else if (e.key === 'b' && openSec) { openSec.classList.toggle('show-base'); const t = [...openSec.querySelectorAll('.tbar .tog')].find(x => x.textContent === 'Base'); if (t) t.classList.toggle('on', openSec.classList.contains('show-base')); }
+    else if (e.key === 'c' && openSec) { e.preventDefault(); openEditor(openSec.querySelector('.tbar'), { file: openSec.dataset.file, form: openSec.dataset.form }); }
+    else return;
+    e.preventDefault();
   });
-  const filters = [['all', () => true], ['changed', s => s.dataset.status === 'changed'], ['new', s => s.dataset.status === 'new'],
-                   ['new I/O', s => !!newIO(s)], ['unviewed', s => formStatus(keyOf(s)) !== 'viewed']];
-  let filter = 'all';
-  const railKey = 'sdiff:rail-folded:' + cfg.ref;
-  const railFolded = new Set((() => { try { return JSON.parse(localStorage.getItem(railKey) || '[]'); } catch (e) { return []; } })());
-  const keepRail = () => { try { localStorage.setItem(railKey, JSON.stringify([...railFolded])); } catch (e) {} };
-  const groupsOf = () => allOf('article.file, details.view-section, section.view-section').filter(g => g.querySelector('section.form[data-form]'));
-  const groupTitle = g => g.matches('article.file') ? g.dataset.file : ((g.querySelector('h2') || {}).textContent || '').trim();
   window.sdShell = () => {
-    const all = cards(), match = filters.find(f => f[0] === filter)[1];
-    if (filtersBox) {
-      filtersBox.replaceChildren(el('span', { class: 'lbl' }, 'Show'), ...filters.map(([name, pred]) =>
-        el('a', { href: '#', class: name === filter ? 'on' : '', onclick: e => { e.preventDefault(); filter = name; window.sdShell(); } },
-           name + ' ' + all.filter(pred).length)));
-    }
-    all.forEach(sec => { sec.hidden = !match(sec); });
-    groupsOf().forEach(g => { g.hidden = [...g.querySelectorAll('section.form[data-form]')].every(s => s.hidden); });
+    const all = cards();
     if (progress) {
       const viewed = all.filter(s => formStatus(keyOf(s)) === 'viewed').length;
-      progress.replaceChildren(el('span', {}, viewed + ' of ' + all.length + ' forms viewed'),
+      progress.replaceChildren(el('span', {}, viewed + '/' + all.length + ' viewed'),
         el('span', { class: 'bar' }, el('span', { class: 'fill', style: 'width:' + (all.length ? Math.round(100 * viewed / all.length) : 0) + '%' })));
     }
-    if (rail) {
-      const shown = groupsOf().filter(g => !g.hidden);
-      const allFolded = shown.length && shown.every(g => railFolded.has(groupTitle(g)));
-      rail.replaceChildren(
-        el('div', { class: 'rail-tools' },
-          el('button', { type: 'button', onclick: () => { shown.forEach(g => allFolded ? railFolded.delete(groupTitle(g)) : railFolded.add(groupTitle(g))); keepRail(); window.sdShell(); } },
-             allFolded ? 'unfold all' : 'fold all')),
-        ...shown.map(g => {
-        const t = groupTitle(g), folded = railFolded.has(t);
-        const forms = [...g.querySelectorAll('section.form[data-form]')].filter(s => !s.hidden);
-        const viewedN = forms.filter(s => formStatus(keyOf(s)) === 'viewed').length;
-        return el('div', { class: 'rg' + (folded ? ' rg-folded' : '') },
-        el('div', { class: 'rg-h' },
-          el('button', { type: 'button', class: 'rg-tog', title: (folded ? 'Unfold' : 'Fold') + '; Alt+click for all groups',
-                         onclick: e => {
-                           if (e.altKey) shown.forEach(x => folded ? railFolded.delete(groupTitle(x)) : railFolded.add(groupTitle(x)));
-                           else if (folded) railFolded.delete(t); else railFolded.add(t);
-                           keepRail(); window.sdShell();
-                         } }, folded ? '▸' : '▾'),
-          el('a', { class: 'rg-t', href: '#' + g.id, title: t }, t),
-          el('span', { class: 'rg-n' }, viewedN + '/' + forms.length)),
-        ...(folded ? [] : forms.map(s => {
-          const st = formStatus(keyOf(s));
-          return el('a', { class: 'rf' + (st === 'viewed' ? ' seen' : ''), href: '#' + s.id, title: s.dataset.form },
-            el('span', { class: 'dot ' + (s.dataset.status || 'changed') }),
-            el('span', { class: 'rn' }, s.dataset.form.startsWith('ns ') ? 'ns ' + s.dataset.form.split('.').pop() : s.dataset.form.replace(/^\S+\s+/, '')),
-            newIO(s) ? el('span', { class: 'io' }, 'io') : null,
-            st === 'viewed' ? el('span', { class: 'ok' }, '✓') : null);
-        })));
-      }));
-    }
+    allOf('section.group, article.file').forEach(g => {
+      const fs = [...g.querySelectorAll('section.form[data-form]')]; if (!fs.length) return;
+      const c = g.querySelector('.gcount') || (() => { const x = el('span', { class: 'gcount' }); (g.querySelector(':scope > h2') || g.firstElementChild).append(x); return x; })();
+      c.textContent = ' ' + fs.filter(s => formStatus(keyOf(s)) === 'viewed').length + '/' + fs.length;
+    });
   };
   document.addEventListener('click', e => {
     const r = e.target.closest('.ln.elided'); if (!r) return;
@@ -335,4 +376,5 @@
 
   render();
   if (state.notes.length) panel.classList.add('sd-open');
+  if (shellPage) { const first = visibleCards().find(s => formStatus(keyOf(s)) !== 'viewed'); if (first) toggleRow(first, true, true); }
 })();

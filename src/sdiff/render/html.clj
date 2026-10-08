@@ -248,6 +248,40 @@
 
 (defn- with-attrs [[tag & more] attrs] (into [tag attrs] more))
 
+(defn- brief [node] (let [t (short (n/string node))] (if (> (count t) 34) (str (subs t 0 33) "…") t)))
+
+(defn summary
+  "What a change does to a form, in a few words: the first changes by kind,
+  and how many more there are."
+  [{:keys [id changes]}]
+  (case (:op (first changes))
+    :added-form (let [h (str (first id))]
+                  (str "new " (cond (re-find #"^defn-?$|^defmacro$" h) "function"
+                                    (re-find #"^def(once)?$" h) "value"
+                                    (re-find #"(^|/)def$" h) "spec"
+                                    (re-find #"^deftest$" h) "test"
+                                    (re-find #"(^|/)(register!|bind)$" h) "registration"
+                                    (re-find #"^defmethod$" h) "method"
+                                    (re-find #"^def(record|type)$" h) "record"
+                                    (re-find #"^defprotocol$" h) "protocol"
+                                    (re-find #"^ns$" h) "namespace"
+                                    :else h)))
+    :removed-form "removed"
+    (let [step (fn [path] (let [s (last path)] (if (vector? s) (str/join " " (map str s)) (str s))))
+          phrase (fn [{:keys [op path old new rename] :as c}]
+                   (case op
+                     :added (str "adds " (brief new))
+                     :removed (str "drops " (brief old))
+                     :replaced (if rename (str "renames " (first rename) " → " (second rename)) (str "changes " (if (seq path) (step path) "a value")))
+                     :reshaped (str "restructures " (or (head old) (name (n/tag old))) " → " (or (head new) (name (n/tag new))))
+                     :comments "comments or docstring only"
+                     :visibility (str "becomes " (:to c))
+                     :wrapped (str "now wrapped in " (or (head new) (name (n/tag new))))
+                     :wrapper "changes its wrapper"
+                     nil))
+          ps (distinct (keep phrase changes))]
+      (str (str/join ", " (take 2 ps)) (when (> (count ps) 2) (str ", +" (- (count ps) 2) " more"))))))
+
 (defn form-view [{:keys [old new path]} {:keys [id was changes extraction note]}]
   (let [op0 (:op (first changes))
         full? (#{:added-form :removed-form} op0)
@@ -255,7 +289,8 @@
         node-new (when-not (= op0 :removed-form) (get (index new) id))]
     [:section.form {:id (decorate/anchor {:path path} {:id id}) :data-file path :data-form (str/join " " (remove nil? (map str id)))
                     :data-status (case op0 :added-form "new" :removed-form "removed" "changed")}
-     [:h3 [:code.fname (str/join " " (map str id))]
+     [:h3 [:code.fname {:title (str/join " " (map str id))} (str/join " " (map str id))]
+      [:span.sum (summary {:id id :changes changes})]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
       (when was [:span.tag.tag-note (str "was " (str/join " " (remove nil? (map str was))))])
       (when (some #(= :reshaped (:op %)) changes) [:span.tag.tag-note "restructured"])
@@ -275,6 +310,8 @@
      (decorate/form-annotations {:path path} {:id id})
      (code-panes old new node-old node-new changes)]))
 
+(def ^:dynamic *shell* false)
+
 (def verdict-label {:semantic "changes behaviour" :rename-only "rename only" :comments-only "comments only" :whitespace-only "formatting only"})
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
 
@@ -291,7 +328,7 @@
                      (when (pos? gone) (str " · " gone " removed")))]))
    (when (seq moved)
      [:ul.renames (for [id moved] [:li "moved " [:code (str/join " " (remove nil? (map str id)))] [:span.n "position among the forms changed"]])])
-   (when (= verdict :semantic) (map (partial form-view fr) forms))
+   (when (= verdict :semantic) (if *shell* [:div.glist (map (partial form-view fr) forms)] (map (partial form-view fr) forms)))
    (when (#{:comments-only :rename-only} verdict)
      [:details [:summary "forms touched"]
       [:ul (for [f forms] [:li [:code (str/join " " (map str (:id f)))]
@@ -317,8 +354,6 @@
      (when mine (list " · " [:a {:href (:url mine) :target "_blank"} "you " (standing-word (:state mine))] " " [:span.mute (:at mine)]))
      (for [{:keys [login state at url]} others]
        (list " · " [:a {:href url :target "_blank"} login " " (standing-word state)] " " [:span.mute at]))]))
-
-(def ^:dynamic ^:private *shell* false)
 
 (defn- pr-view [gh-url {:keys [num title clj other renames] :as r}]
   (let [counts (frequencies (map :verdict clj))]
@@ -378,11 +413,8 @@
                                                          (when (and status (= (:author status) (:viewer status))) "your own PR")
                                                          (when head (str "head " (subs head 0 (min 7 (count head)))))]))]]
                    [:div#sd-progress.progress]]
-                  [:div.row2 before [:div#sd-filters.filters]]]]
-                [:div.shell
-                 [:nav#sd-rail.rail]
-                 [:main.main (when used (names/legend used)) (names/shorten-hiccup used content)]
-                 [:div#sd-panel-slot.panel-slot]]
+                  [:div.row2 before]]]
+                [:main.main (when used (names/legend used)) (names/shorten-hiccup used content)]
                 extra-body]))
          [:body
           [:div.wrap

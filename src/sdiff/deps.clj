@@ -324,45 +324,33 @@
   (when-let [d (data report)]
     (if (:error d)
       (derived "deps" [:p "Dependency analysis failed: " (:error d)])
-      (let [forms (per-form d report)
-            ns-of-path (into {} (for [[[p] v] (concat (get-in d [:base :forms]) (get-in d [:head :forms])) :when (:ns v)] [p (:ns v)]))
+      (let [ns-of-path (into {} (for [[[p] v] (concat (get-in d [:base :forms]) (get-in d [:head :forms])) :when (:ns v)] [p (:ns v)]))
             changed-ns (set (keep #(ns-of-path (:path %)) (:clj report)))
             {:keys [requires cycles]} (ns-changes d changed-ns)
-            code? (let [re (re-pattern (:test-paths defaults))] (fn [[f]] (not (re-find re (:path f)))))
-            anchor (fn [[f form]] (str "#" (decorate/anchor {:path (:path f)} {:id (:id form)})))
-            new-io (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:reaches-added x)))) forms)
-            widest (first (sort-by (fn [[_ _ x]] (- (:outside-callers x 0)))
-                                   (filter (fn [[_ _ x :as e]] (and (code? e) (not (:new? x)) (not (:removed? x)) (pos? (:outside-callers x 0)))) forms)))
-            signature (filter (fn [[_ form :as e]] (and (code? e) (signature-changed? form))) forms)
             coupled (couplings d requires)
-            semantic (count (filter #(= :semantic (:verdict %)) (:clj report)))]
-        [:section.start
-         [:div.start-h [:h4 "Start here"]
-          [:span.prov-inline (str "derived · clj-kondo over base and head · " semantic " Clojure file" (when (not= 1 semantic) "s") " change behaviour")]]
-         (when (or (seq new-io) widest (seq signature) (seq coupled) (seq cycles))
-           [:div.cards
-            (when (seq new-io)
-              (card "k-io" "New I/O outside tests" (anchor (first new-io))
-                    (interpose ", " (for [[_ form] new-io] [:code (form-name form)]))
-                    " now reach" (when (= 1 (count new-io)) "es") " "
-                    (tags "tag-ext" (sort (distinct (mapcat (fn [[_ _ x]] (:reaches-added x)) new-io))))))
-            (when-let [[_ form x :as e] widest]
-              (card "k-sem" "Widest blast radius" (anchor e)
-                    [:code (form-name form)] " changed · " (:outside-callers x) " callers in " (:caller-ns x) " namespaces"))
-            (when (seq signature)
-              (card "k-sem" "Signature change" (anchor (first signature))
-                    (interpose "; " (for [[_ form x] (take 3 signature)]
-                                      (list [:code (form-name form)] " changes its arguments · " (count (:callers x)) " caller" (when (not= 1 (count (:callers x))) "s"))))))
-            (when (seq coupled)
-              (card "k-ren" "New coupling" nil
-                    (interpose "; " (for [[from to] (take 3 coupled)]
-                                      (let [tail #(str/join "." (take-last 2 (str/split % #"\.")))]
-                                        (list [:code {:title from} (tail from)] " → " [:code {:title to} (tail to)]))))
-                    (when (> (count coupled) 3) (str " · +" (- (count coupled) 3) " more"))))
-            (when (seq cycles)
-              (card "k-del" "New namespace cycle" nil (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))))])
-         [:p.start-foot (count forms) " changed forms · " (count coupled) " new dependencies between project namespaces · "
-          (count cycles) " new namespace cycles"]]))))
+            tail #(str/join "." (take-last 2 (str/split % #"\.")))]
+        (when (or (seq coupled) (seq cycles))
+          [:details.deps-note
+           [:summary (str (count coupled) " new dependenc" (if (= 1 (count coupled)) "y" "ies") " between project namespaces"
+                          (when (seq cycles) (str " · " (count cycles) " new cycle" (when (> (count cycles) 1) "s"))))]
+           [:ul (for [[from to] coupled] [:li [:code {:title from} (tail from)] " → " [:code {:title to} (tail to)]])
+            (for [c cycles] [:li "cycle: " (str/join " ↔ " (sort c))])]])))))
+
+(defn by-risk
+  "Changed forms in three bands: those that need attention (new I/O outside
+  tests, a changed signature, or callers in 10 or more forms of other
+  namespaces), the other changes, and tests."
+  [_ctx report]
+  (when-let [d (data report)]
+    (when-not (:error d)
+      (let [test? (let [re (re-pattern (:test-paths defaults))] (fn [p] (re-find re p)))
+            weight (fn [form x] (cond (seq (:reaches-added x)) 0 (signature-changed? form) 1 (>= (:outside-callers x 0) 10) 2))
+            rows (for [[f form x] (per-form d report)] {:k [(:path f) (decorate/form-id form)] :x x :w (weight form x) :test (test? (:path f))})
+            band (fn [{:keys [w test]}] (cond test 2 w 0 :else 1))
+            item (fn [{[p id] :k}] [:form p id])]
+        (for [[b rs] (sort-by key (group-by band rows))]
+          {:title (["Needs attention" "Other changes" "Tests"] b)
+           :items (mapv item (sort-by (fn [{:keys [w x]}] [(or w 9) (- (:outside-callers x 0))]) rs))})))))
 
 (defn by-callers
   "Changed forms banded by how many forms outside their own namespace call them,
@@ -417,7 +405,10 @@
               parts (when x (line-parts x))]
           (when (seq parts)
             [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))
-                             :data-new-io (when (seq (:reaches-added x)) (str/join " " (map name (:reaches-added x))))}
+                             :data-new-io (when (seq (:reaches-added x)) (str/join " " (map name (:reaches-added x))))
+                             :data-outside (:outside-callers x 0)
+                             :data-callers (count (:callers x))
+                             :data-signature (when (signature-changed? full) "1")}
              [:div.dl (interpose [:span.sep " · "] parts)]
              (when (seq (:callers-by-ns x))
                (let [shown (take 3 (:callers-by-ns x)) more (- (count (:callers-by-ns x)) (count shown))]
@@ -429,4 +420,5 @@
 
 (decorate/add-header-decorator! ::deps header)
 (decorate/add-grouper! :callers "callers" "deps · clj-kondo over the whole repository" by-callers)
+(decorate/add-grouper! :risk "risk" "deps · clj-kondo over the whole repository" by-risk)
 (decorate/add-form-decorator! ::deps form-line)

@@ -62,8 +62,34 @@
 (defn- shown-files [view]
   (set (for [s (:sections view) [kind a] (:items s) :when (= :file kind)] a)))
 
+(defn- render-compact
+  "A grouping as plain lists of forms, one per section, then everything the
+  grouping did not place."
+  [report view]
+  (let [shown (shown-forms view)
+        file-of* (fn [p] (file-of report p))
+        rest-forms (for [f (:clj report) :when (= :semantic (:verdict f)) form (:forms f)
+                         :when (not (shown [(:path f) (decorate/form-id form)]))] [f form])]
+    (list
+     (for [[i s] (map-indexed vector (:sections view)) :when (seq (:items s))]
+       [:section.group {:id (str "view-" (inc i))}
+        [:div.glabel (:title s) [:span.gcount]]
+        [:div.glist (for [[kind a b] (:items s) :when (= :form kind)
+                          :let [f (file-of* a) fm (when f (form-of f b))] :when fm]
+                      (html/form-view f fm))]])
+     (when (seq rest-forms)
+       [:section.group {:id "view-rest"}
+        [:div.glabel "Everything else" [:span.gcount]]
+        [:div.glist (for [[f form] rest-forms] (html/form-view f form))]]))))
+
+(declare render-full)
+
 (defn render
   "The view's sections, then the rest of the report folded."
+  [report view]
+  (if (:compact view) (render-compact report view) (render-full report view)))
+
+(defn- render-full
   [report view]
   (let [shown (shown-forms view) files (shown-files view)
         rest-files (for [f (:clj report) :when (not (files (:path f)))
