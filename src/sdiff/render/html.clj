@@ -81,36 +81,134 @@
                           :let [[s e] r] :when (and (>= s fs) (<= e fe))] [s e cls]))]
     (render-ranges src fs fe rs)))
 
-(defn- excerpt
-  "The changed lines of `form` with `context` lines around each cluster, or nil
-  when the excerpt would not be noticeably shorter than the whole form. Marks
-  crossing a window's edge lose their highlight, never their text."
-  [src form marks context]
-  (let [lines (str/split src #"\n" -1)
-        off (offsets src)
-        {fr :row fer :end-row} (meta form)
+(def ^:private change-classes #{"add" "del" "ext" "ren"})
+
+(defn- split-lines
+  "Highlighted hiccup cut into source lines. Each line keeps the elements that
+  span it, reopened on every line, and lists its text with the change mark it
+  sits in, so a line can be told changed, whole-line added or removed."
+  [nodes]
+  (letfn [(go [nodes mark]
+            (reduce (fn [lines node]
+                      (let [parts (cond
+                                    (string? node) (mapv (fn [t] {:h (if (seq t) [t] []) :segs [[t mark]]}) (str/split node #"\n" -1))
+                                    (and (vector? node) (keyword? (first node)))
+                                    (let [[tag attrs & kids] node
+                                          cls (:class attrs)
+                                          m (if (and (= :mark tag) (or (change-classes cls) (= "kept" cls))) cls mark)]
+                                      (mapv (fn [l] (assoc l :h (if (seq (:h l)) [(into [tag attrs] (:h l))] [])))
+                                            (go kids m)))
+                                    (sequential? node) (go node mark)
+                                    :else [{:h [] :segs []}])
+                            l (peek lines)]
+                        (into (assoc lines (dec (count lines)) {:h (into (:h l) (:h (first parts))) :segs (into (:segs l) (:segs (first parts)))})
+                              (rest parts))))
+                    [{:h [] :segs []}] nodes))]
+    (go nodes nil)))
+
+(defn- form-lines
+  "The lines of `form` in `src`, from the start of its first line, each with its
+  number, hiccup, plain text, whether it carries a change and its whole-line tint."
+  [src form marks]
+  (let [off (offsets src)
+        {:keys [row]} (meta form)
         [fs fe] (range-of off form)
-        changed (sort (for [[node cls] marks :when (change-mark? cls) :let [{:keys [row end-row]} (meta node)] :when row] [row end-row]))
-        clusters (reduce (fn [acc [r e]]
-                           (let [[pr pe] (peek acc)]
-                             (if (and pe (<= r (+ pe 1 (* 2 context)))) (conj (pop acc) [pr (max pe e)]) (conj acc [r e]))))
-                         [] changed)
-        windows (for [[r e] clusters] [(max fr (- r context)) (min fer (+ e context))])
-        shown (reduce + (map (fn [[a b]] (inc (- b a))) windows))]
-    (when (and fr (seq windows) (<= (+ shown 4) (inc (- fer fr))))
-      (let [rs (sort-by range-order
-                        (for [[node cls] (concat marks (token-marks form)) :let [r (range-of off node)] :when r] (conj r cls)))]
-        (->> (for [[[a b] prev-end] (map vector windows (cons (dec fr) (map second windows)))
-                   :let [ws (max fs (off a 1)) we (min fe (+ (off b 1) (count (nth lines (dec b)))))
-                         inner (filter (fn [[s e]] (and (>= s ws) (<= e we))) rs)
-                         gap (- a prev-end 1)]]
-               [(when (pos? gap) [:span.elided (str "⋮ " gap " line" (when (> gap 1) "s") "\n")])
-                (seq (render-ranges src ws we inner)) "\n"])
-             (apply concat)
-             (remove nil?)
-             (vec)
-             (#(let [below (- fer (second (last windows)))]
-                 (cond-> % (pos? below) (conj [:span.elided (str "⋮ " below " line" (when (> below 1) "s"))])))))))))
+        start (off row 1)
+        rs (sort-by range-order
+                    (for [[node cls] (concat marks (token-marks form)) :let [r (range-of off node)] :when r
+                          :let [[s e] r] :when (and (>= s fs) (<= e fe))] [s e cls]))]
+    (vec (map-indexed
+          (fn [i {:keys [h segs]}]
+            (let [text (apply str (map first segs))
+                  inked (remove #(str/blank? (first %)) segs)]
+              {:n (+ row i) :h h :text text
+               :changed? (boolean (some #(change-classes (second %)) inked))
+               :tint (when (seq inked)
+                       (cond (every? #(#{"add" "ext" "ren"} (second %)) inked) "ln-add"
+                             (every? #(= "del" (second %)) inked) "ln-del"))}))
+          (split-lines (render-ranges src start fe rs))))))
+
+(defn- align
+  "Pairs `[i j]` of base and head line indexes, matching lines whose text is the
+  same and leaving `nil` where one side has a line the other has not."
+  [a b]
+  (let [na (count a) nb (count b) ka (mapv #(str/trim (:text %)) a) kb (mapv #(str/trim (:text %)) b)]
+    (if (> (* na nb) 2000000)
+      (vec (for [i (range (max na nb))] [(when (< i na) i) (when (< i nb) i)]))
+      (let [t (make-array Long/TYPE (inc na) (inc nb))]
+        (doseq [i (range (dec na) -1 -1) j (range (dec nb) -1 -1)]
+          (aset t i j (if (= (ka i) (kb j))
+                        (inc (aget t (inc i) (inc j)))
+                        (max (aget t (inc i) j) (aget t i (inc j))))))
+        (->> (loop [i 0 j 0 out []]
+               (cond (and (< i na) (< j nb) (= (ka i) (kb j))) (recur (inc i) (inc j) (conj out [i j]))
+                     (and (< i na) (or (>= j nb) (>= (aget t (inc i) j) (aget t i (inc j))))) (recur (inc i) j (conj out [i nil]))
+                     (< j nb) (recur i (inc j) (conj out [nil j]))
+                     :else out))
+             (partition-by (fn [[i j]] (boolean (and i j))))
+             (mapcat (fn [run]
+                       (if (every? (fn [[i j]] (and i j)) run)
+                         run
+                         (let [is (keep first run) js (keep second run) n (max (count is) (count js))]
+                           (for [k (range n)] [(nth is k nil) (nth js k nil)])))))
+             vec)))))
+
+(defn- elide
+  "Rows to show: every row when the form is short, else the changed rows with
+  `context` rows around them; the rest become `[:run n rows]` that open on click."
+  [rows changed? context]
+  (if (<= (count rows) 30)
+    rows
+    (let [hot (set (for [[k r] (map-indexed vector rows) :when (changed? r) d (range (- context) (inc context))] (+ k d)))
+          hot (if (empty? hot) (set (range 12)) hot)]
+      (->> (map-indexed vector rows)
+           (partition-by (fn [[k]] (contains? hot k)))
+           (mapcat (fn [part] (if (contains? hot (ffirst part)) (map second part) [[:run (count part) (map second part)]])))))))
+
+(def ^:private run-ids (atom 0))
+
+(defn- line-div [l]
+  (if l
+    [:div.ln {:class (:tint l)} [:span.gut (:n l)] [:span.cd (seq (:h l))]]
+    [:div.ln.spacer [:span.gut] [:span.cd " "]]))
+
+(defn- with-meta-run [[tag attrs & kids] id]
+  (into [tag (-> attrs (update :class #(str/trim (str % " hid"))) (assoc :data-in id))] kids))
+
+(defn- pane [label sha items pick]
+  [:div.pane
+   [:div.pane-h [:span label] [:span.sha sha]]
+   [:div.scroll
+    (for [it items]
+      (if (and (vector? it) (= :run (first it)))
+        (let [[_ n rs id] it]
+          (list [:div.ln.elided {:data-run id} [:span.gut] [:span.cd (str "⋮ " n " line" (when (not= 1 n) "s"))]]
+                (for [r rs] (with-meta-run (line-div (pick r)) id))))
+        (line-div (pick it))))]])
+
+(declare marks-for)
+
+(defn- code-panes
+  "Base and head of a form side by side, rows aligned, unchanged runs elided;
+  one pane for a form that is only on one side."
+  [old new node-old node-new changes]
+  (let [sha (fn [k] (some-> decorate/*ctx* :report k (subs 0 7)))
+        tag-runs (fn [items] (map #(if (and (vector? %) (= :run (first %))) (conj % (swap! run-ids inc)) %) items))]
+    (cond
+      (and node-old node-new)
+      (let [a (form-lines old node-old (marks-for :old changes))
+            b (form-lines new node-new (marks-for :new changes))
+            pairs (align a b)
+            changed? (fn [[i j]] (or (nil? i) (nil? j) (:changed? (a i)) (:changed? (b j))))
+            items (tag-runs (elide pairs changed? 2))]
+        [:div.panes
+         (pane "base" (sha :base) items (fn [[i]] (when i (a i))))
+         (pane "head" (sha :head) items (fn [[_ j]] (when j (b j))))])
+      (or node-old node-new)
+      (let [[src node side label k] (if node-new [new node-new :new "head · new form" :head] [old node-old :old "base · removed" :base])
+            ls (form-lines src node (marks-for side changes))
+            items (tag-runs (elide (vec (range (count ls))) (constantly false) 0))]
+        [:div.panes.single (pane label (sha k) items ls)]))))
 
 (defn- marks-for [side changes]
   (concat
@@ -155,12 +253,15 @@
         full? (#{:added-form :removed-form} op0)
         node-old (when-not (= op0 :added-form) (get (index old) (or was id)))
         node-new (when-not (= op0 :removed-form) (get (index new) id))]
-    [:section.form {:id (decorate/anchor {:path path} {:id id}) :data-file path :data-form (str/join " " (remove nil? (map str id)))}
-     [:h3 [:code (str/join " " (map str id))]
+    [:section.form {:id (decorate/anchor {:path path} {:id id}) :data-file path :data-form (str/join " " (remove nil? (map str id)))
+                    :data-status (case op0 :added-form "new" :removed-form "removed" "changed")}
+     [:h3 [:code.fname (str/join " " (map str id))]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
       (when was [:span.tag.tag-note (str "was " (str/join " " (remove nil? (map str was))))])
+      (when (some #(= :reshaped (:op %)) changes) [:span.tag.tag-note "restructured"])
       (when extraction [:span.tag.tag-ext (str "extracted from " (str/join " " (map str (:from extraction))))])
-      (when note [:span.tag.tag-note note])]
+      (when note [:span.tag.tag-note note])
+      [:span.fpath {:title path} path]]
      (when-not full?
        [:ul.changes (for [c changes :let [row (change-row c)] :when row]
                       (if (seq (:path c)) (with-attrs row {:data-at (fmt-path (:path c))}) row))])
@@ -172,18 +273,7 @@
         [:ul.changes (map change-row (:drift extraction))]])
      (decorate/form-decorations {:path path} {:id id})
      (decorate/form-annotations {:path path} {:id id})
-     (let [ex-old (when (and node-old (not full?)) (excerpt old node-old (marks-for :old changes) 2))
-           ex-new (when (and node-new (not full?)) (excerpt new node-new (marks-for :new changes) 2))]
-       (list
-        (when (and ex-old ex-new)
-          [:div.sbs.excerpt
-           [:pre.code (seq ex-old)]
-           [:pre.code (seq ex-new)]])
-        [:details {:open (boolean full?)}
-         [:summary (cond full? "source" (and ex-old ex-new) "whole form" :else "whole form, changes marked")]
-         [:div.sbs {:class (when full? "single")}
-          (when node-old [:pre.code (seq (highlighted old node-old (marks-for :old changes)))])
-          (when node-new [:pre.code (seq (highlighted new node-new (marks-for :new changes)))])]]))]))
+     (code-panes old new node-old node-new changes)]))
 
 (def verdict-label {:semantic "changes behaviour" :rename-only "rename only" :comments-only "comments only" :whitespace-only "formatting only"})
 (def verdict-order {:semantic 0 :rename-only 1 :comments-only 2 :whitespace-only 3})
@@ -194,6 +284,11 @@
     [:code.path {:title path} path]
     (case status "A" [:span.tag.tag-add "new file"] "D" [:span.tag.tag-del "deleted"] nil)
     (when gh-url [:a.gh {:href (str gh-url "/pull/" pr-num "/files") :target "_blank"} "comment on GitHub"])]
+   (when (= verdict :semantic)
+     (let [news (count (filter #(= :added-form (:op (first (:changes %)))) forms))
+           gone (count (filter #(= :removed-form (:op (first (:changes %)))) forms))]
+       [:p.gsub (str (count forms) " form" (when (not= 1 (count forms)) "s") " · " (- (count forms) news gone) " changed · " news " new"
+                     (when (pos? gone) (str " · " gone " removed")))]))
    (when (seq moved)
      [:ul.renames (for [id moved] [:li "moved " [:code (str/join " " (remove nil? (map str id)))] [:span.n "position among the forms changed"]])])
    (when (= verdict :semantic) (map (partial form-view fr) forms))
@@ -223,12 +318,15 @@
      (for [{:keys [login state at url]} others]
        (list " · " [:a {:href url :target "_blank"} login " " (standing-word state)] " " [:span.mute at]))]))
 
+(def ^:dynamic ^:private *shell* false)
+
 (defn- pr-view [gh-url {:keys [num title clj other renames] :as r}]
   (let [counts (frequencies (map :verdict clj))]
     [:section.pr {:id (str "pr-" num)}
      [:header
-      [:h1 (if gh-url [:a {:href (str gh-url "/pull/" num) :target "_blank"} (str "#" num)] (str "#" num)) " " title]
-      (status-view (:status r))
+      (when-not *shell*
+        (list [:h1 (if gh-url [:a {:href (str gh-url "/pull/" num) :target "_blank"} (str "#" num)] (str "#" num)) " " title]
+              (status-view (:status r))))
       [:p.sum
        (str (count clj) " Clojure file" (when (not= 1 (count clj)) "s") ": ")
        (str/join ", " (for [[k l] [[:semantic "change behaviour"] [:rename-only "rename only"] [:comments-only "comments only"] [:whitespace-only "formatting only"]] :when (counts k)] (str (counts k) " " l)))
@@ -251,7 +349,7 @@
   `extra-head` and `extra-body` are hiccup appended to head and body, which is
   how the local review server adds its review panel. `body` replaces the
   per-PR content, which is how a view renders over the same page."
-  [gh-url repo-name prs & {:keys [extra-head extra-body body before names]}]
+  [gh-url repo-name prs & {:keys [extra-head extra-body body before names shell]}]
   (str "<!doctype html>"
        (hc/html
         [:html {:lang "en"}
@@ -263,6 +361,29 @@
           [:link {:rel "stylesheet" :href "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"}]
           [:style (hc/raw css)]
           extra-head]
+         (if (and shell (= 1 (count prs)))
+           (binding [*shell* true]
+             (let [{:keys [num title status head author] :as r} (first prs)
+                   content (or body (pr-view gh-url r))
+                   used (when names (names/used names (apply str (names/hiccup-strings content))))]
+               [:body.shell-page
+                [:header.top
+                 [:div.top-in
+                  [:div.row1
+                   [:h1 [:span.repo repo-name]
+                    (if gh-url [:a {:href (str gh-url "/pull/" num) :target "_blank"} (str "#" num)] (str "#" num)) " " title]
+                   [:div.meta
+                    (when status [:span.pill {:class (str "pill-" (:state status))} (:state status) (when (:merged-at status) (str " " (:merged-at status)))])
+                    [:span (str/join " · " (remove nil? [(or (:author status) author)
+                                                         (when (and status (= (:author status) (:viewer status))) "your own PR")
+                                                         (when head (str "head " (subs head 0 (min 7 (count head)))))]))]]
+                   [:div#sd-progress.progress]]
+                  [:div.row2 before [:div#sd-filters.filters]]]]
+                [:div.shell
+                 [:nav#sd-rail.rail]
+                 [:main.main (when used (names/legend used)) (names/shorten-hiccup used content)]
+                 [:div#sd-panel-slot.panel-slot]]
+                extra-body]))
          [:body
           [:div.wrap
            [:div.intro
@@ -276,4 +397,4 @@
                  used (when names (names/used names (apply str (names/hiccup-strings content))))]
              (list (when used (names/legend used))
                    (names/shorten-hiccup used content)))]
-          extra-body]])))
+          extra-body])])))

@@ -308,6 +308,18 @@
   (let [test-ns (set (keep (fn [[_ v]] (when (:test v) (:ns v))) (get-in d [:head :forms])))]
     (for [{:keys [ns internal-added]} requires :when (not (test-ns ns)) to internal-added :when (not (test-ns to))] [ns to])))
 
+(defn- signature-changed?
+  "A function that existed before and changed its arguments or arities."
+  [form]
+  (and (re-find #"^defn-?$" (str (first (:id form))))
+       (not (#{:added-form :removed-form} (:op (first (:changes form)))))
+       (some #(re-find #"^(args|arity \d+ › args)\b" (core/fmt-path (:path %))) (:changes form))))
+
+(defn- form-name [form] (let [id (decorate/form-id form)] (or (defined-keyword id) (last (str/split id #" ")))))
+
+(defn- card [cls kicker href & body]
+  [:a.card {:class cls :href href} [:div.kicker kicker] (into [:div.cbody] body)])
+
 (defn header [ctx report]
   (when-let [d (data report)]
     (if (:error d)
@@ -317,18 +329,40 @@
             changed-ns (set (keep #(ns-of-path (:path %)) (:clj report)))
             {:keys [requires cycles]} (ns-changes d changed-ns)
             code? (let [re (re-pattern (:test-paths defaults))] (fn [[f]] (not (re-find re (:path f)))))
+            anchor (fn [[f form]] (str "#" (decorate/anchor {:path (:path f)} {:id (:id form)})))
             new-io (filter (fn [[_ _ x :as e]] (and (code? e) (seq (:reaches-added x)))) forms)
-            coupled (couplings d requires)]
-        (derived "deps · clj-kondo over the whole repository, base and head; the lines under each form come from the same analysis"
-                 [:h5 "Dependencies"]
-                 [:p (count forms) " changed forms · " (count new-io) " outside tests reach a new kind of I/O · "
-                  (count coupled) " new dependencies between project namespaces · " (count cycles) " new namespace cycles"]
-                 (when (seq new-io)
-                   [:ul (for [[_ form x] new-io] [:li [:code (or (defined-keyword (decorate/form-id form)) (decorate/form-id form))] " now reaches " (tags "tag-ext" (:reaches-added x))])])
-                 (when (seq coupled)
-                   [:ul (for [[from to] coupled] [:li [:code from] " now requires " [:code to]])])
-                 (when (seq cycles)
-                   [:p "New cycles: " (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))]))))))
+            widest (first (sort-by (fn [[_ _ x]] (- (:outside-callers x 0)))
+                                   (filter (fn [[_ _ x :as e]] (and (code? e) (not (:new? x)) (not (:removed? x)) (pos? (:outside-callers x 0)))) forms)))
+            signature (filter (fn [[_ form :as e]] (and (code? e) (signature-changed? form))) forms)
+            coupled (couplings d requires)
+            semantic (count (filter #(= :semantic (:verdict %)) (:clj report)))]
+        [:section.start
+         [:div.start-h [:h4 "Start here"]
+          [:span.prov-inline (str "derived · clj-kondo over base and head · " semantic " Clojure file" (when (not= 1 semantic) "s") " change behaviour")]]
+         (when (or (seq new-io) widest (seq signature) (seq coupled) (seq cycles))
+           [:div.cards
+            (when (seq new-io)
+              (card "k-io" "New I/O outside tests" (anchor (first new-io))
+                    (interpose ", " (for [[_ form] new-io] [:code (form-name form)]))
+                    " now reach" (when (= 1 (count new-io)) "es") " "
+                    (tags "tag-ext" (sort (distinct (mapcat (fn [[_ _ x]] (:reaches-added x)) new-io))))))
+            (when-let [[_ form x :as e] widest]
+              (card "k-sem" "Widest blast radius" (anchor e)
+                    [:code (form-name form)] " changed · " (:outside-callers x) " callers in " (:caller-ns x) " namespaces"))
+            (when (seq signature)
+              (card "k-sem" "Signature change" (anchor (first signature))
+                    (interpose "; " (for [[_ form x] (take 3 signature)]
+                                      (list [:code (form-name form)] " changes its arguments · " (count (:callers x)) " caller" (when (not= 1 (count (:callers x))) "s"))))))
+            (when (seq coupled)
+              (card "k-ren" "New coupling" nil
+                    (interpose "; " (for [[from to] (take 3 coupled)]
+                                      (let [tail #(str/join "." (take-last 2 (str/split % #"\.")))]
+                                        (list [:code {:title from} (tail from)] " → " [:code {:title to} (tail to)]))))
+                    (when (> (count coupled) 3) (str " · +" (- (count coupled) 3) " more"))))
+            (when (seq cycles)
+              (card "k-del" "New namespace cycle" nil (interpose "; " (for [c cycles] (str/join " ↔ " (sort c))))))])
+         [:p.start-foot (count forms) " changed forms · " (count coupled) " new dependencies between project namespaces · "
+          (count cycles) " new namespace cycles"]]))))
 
 (defn by-callers
   "Changed forms banded by how many forms outside their own namespace call them,
@@ -382,8 +416,13 @@
               x (when-not test-file? (form-deps d file full))
               parts (when x (line-parts x))]
           (when (seq parts)
-            [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))}
-             (interpose [:span.sep " · "] parts)
+            [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))
+                             :data-new-io (when (seq (:reaches-added x)) (str/join " " (map name (:reaches-added x))))}
+             [:div.dl (interpose [:span.sep " · "] parts)]
+             (when (seq (:callers-by-ns x))
+               (let [shown (take 3 (:callers-by-ns x)) more (- (count (:callers-by-ns x)) (count shown))]
+                 [:div.sample (interpose " — " (for [[ns cs] shown] (str ns " · " (str/join ", " (map #(last (str/split % #"/")) (take 2 cs))) (when (> (count cs) 2) ", …"))))
+                  (when (pos? more) (str " · +" more " ns"))]))
              (when (seq (:callers x))
                [:details.deps-callers [:summary "callers"]
                 [:ul (for [[ns cs] (:callers-by-ns x)] [:li [:code.mute ns] " " (codes cs)])]])]))))))

@@ -39,11 +39,11 @@
   document.querySelectorAll('section.form[data-form]').forEach(sec => {
     const base = { file: sec.dataset.file, form: sec.dataset.form };
     const h3 = sec.querySelector('h3');
-    h3.append(el('button', { type: 'button', class: 'sd-add', title: 'Comment on ' + base.form, onclick: () => openEditor(h3, base) }, '💬 comment'));
+    h3.append(el('button', { type: 'button', class: 'sd-add', title: 'Comment on ' + base.form, onclick: () => openEditor(h3, base) }, 'comment'));
     sec.querySelectorAll(':scope > ul.changes > li[data-at]').forEach(li => {
       const at = Object.assign({}, base, { at: li.dataset.at });
       (li.querySelector(':scope > .p') || li).append(el('button', { type: 'button', class: 'sd-add', title: 'Comment on ' + where(at),
-        onclick: () => openEditor(li, at) }, '💬'));
+        onclick: () => openEditor(li, at) }, '+ note'));
     });
   });
 
@@ -164,6 +164,15 @@
     ...['comment', 'approve', 'request-changes'].map(v => el('option', Object.assign({ value: v }, verdictAllowed(v) ? {} : { disabled: '' }), verdictLabel(v))));
   if (!verdictAllowed(state.verdict)) state.verdict = 'comment';
   verdict.value = state.verdict;
+  const verdictNames = { comment: 'Comment', approve: 'Approve', 'request-changes': 'Request changes' };
+  const seg = el('div', { class: 'sd-seg' }, ...Object.keys(verdictNames).map(v => {
+    const b = el('button', { type: 'button', 'data-v': v, title: verdictLabel(v) }, verdictNames[v]);
+    if (!verdictAllowed(v)) b.disabled = true;
+    b.addEventListener('click', () => { verdict.value = v; state.verdict = v; paintSeg(); changed(); });
+    return b;
+  }));
+  function paintSeg() { seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === state.verdict)); }
+  paintSeg();
   const standing = [status.state ? 'This PR is ' + status.state + (status['merged-at'] ? ' (' + status['merged-at'] + ')' : '') + '.' : '',
     own ? 'It is your own, so GitHub only allows a comment review.' : '',
     status.mine ? 'You ' + status.mine.state.toLowerCase().replace('_', ' ') + ' it on ' + status.mine.at + '.' : '',
@@ -179,7 +188,7 @@
     el('div', { class: 'sd-body' },
       standing ? el('p', { class: 'sd-hint sd-standing' }, standing) : null,
       el('p', { class: 'sd-hint' }, 'Click a file or form heading to fold it. Alt+click folds or unfolds every one at that level, and Alt+click on a source toggle opens or closes them all.'),
-      el('label', {}, 'Verdict ', verdict), summary, list,
+      seg, summary, list,
       el('details', { class: 'sd-settings' }, el('summary', {}, 'Settings'),
         ...[['show-inferred', 'Show inferred notes'],
             ['fold-viewed-forms', 'Fold forms I mark viewed'],
@@ -199,12 +208,14 @@
       el('div', { class: 'sd-row' },
         el('button', { type: 'button', onclick: preview }, 'Preview'), postBtn),
       out));
-  document.body.append(panel);
+  const slot = document.getElementById('sd-panel-slot');
+  if (slot) { slot.append(panel); panel.classList.add('sd-docked', 'sd-open'); } else document.body.append(panel);
   postBtn.addEventListener('click', postReview);
 
   function changed() { previewed = null; postBtn.disabled = true; out.textContent = ''; save(); render(); }
 
   function render() {
+    if (window.sdShell) window.sdShell();
     const ks = Object.keys(formBoxes);
     count.textContent = state.notes.length + (state.notes.length === 1 ? ' note' : ' notes') +
       (ks.length ? ' · ' + ks.filter(k => formStatus(k) === 'viewed').length + '/' + ks.length + ' forms viewed' : '');
@@ -249,6 +260,56 @@
       state.notes = []; state.summary = ''; summary.value = ''; save(); render();
     } catch (e) { out.textContent = 'Post failed: ' + e.message; postBtn.disabled = false; }
   }
+
+  const rail = document.getElementById('sd-rail');
+  const filtersBox = document.getElementById('sd-filters');
+  const progress = document.getElementById('sd-progress');
+  const cards = () => allOf('section.form[data-form]');
+  const keyOf = sec => sec.dataset.file + '|' + sec.dataset.form;
+  const newIO = sec => { const d = sec.querySelector('.deps-line[data-new-io]'); return d ? d.dataset.newIo : null; };
+  cards().forEach(sec => {
+    const io = newIO(sec); if (!io) return;
+    const h = sec.querySelector(':scope > h3'), fp = h.querySelector('.fpath');
+    h.insertBefore(el('span', { class: 'tag tag-ext' }, 'reaches ' + io), fp);
+  });
+  const filters = [['all', () => true], ['changed', s => s.dataset.status === 'changed'], ['new', s => s.dataset.status === 'new'],
+                   ['new I/O', s => !!newIO(s)], ['unviewed', s => formStatus(keyOf(s)) !== 'viewed']];
+  let filter = 'all';
+  const groupsOf = () => allOf('article.file, details.view-section, section.view-section').filter(g => g.querySelector('section.form[data-form]'));
+  const groupTitle = g => g.matches('article.file') ? g.dataset.file : ((g.querySelector('h2') || {}).textContent || '').trim();
+  window.sdShell = () => {
+    const all = cards(), match = filters.find(f => f[0] === filter)[1];
+    if (filtersBox) {
+      filtersBox.replaceChildren(el('span', { class: 'lbl' }, 'Show'), ...filters.map(([name, pred]) =>
+        el('a', { href: '#', class: name === filter ? 'on' : '', onclick: e => { e.preventDefault(); filter = name; window.sdShell(); } },
+           name + ' ' + all.filter(pred).length)));
+    }
+    all.forEach(sec => { sec.hidden = !match(sec); });
+    groupsOf().forEach(g => { g.hidden = [...g.querySelectorAll('section.form[data-form]')].every(s => s.hidden); });
+    if (progress) {
+      const viewed = all.filter(s => formStatus(keyOf(s)) === 'viewed').length;
+      progress.replaceChildren(el('span', {}, viewed + ' of ' + all.length + ' forms viewed'),
+        el('span', { class: 'bar' }, el('span', { class: 'fill', style: 'width:' + (all.length ? Math.round(100 * viewed / all.length) : 0) + '%' })));
+    }
+    if (rail) {
+      rail.replaceChildren(...groupsOf().filter(g => !g.hidden).map(g => el('div', { class: 'rg' },
+        el('a', { class: 'rg-t', href: '#' + g.id, title: groupTitle(g) }, groupTitle(g)),
+        ...[...g.querySelectorAll('section.form[data-form]')].filter(s => !s.hidden).map(s => {
+          const st = formStatus(keyOf(s));
+          return el('a', { class: 'rf' + (st === 'viewed' ? ' seen' : ''), href: '#' + s.id, title: s.dataset.form },
+            el('span', { class: 'dot ' + (s.dataset.status || 'changed') }),
+            el('span', { class: 'rn' }, s.dataset.form.startsWith('ns ') ? 'ns ' + s.dataset.form.split('.').pop() : s.dataset.form.replace(/^\S+\s+/, '')),
+            newIO(s) ? el('span', { class: 'io' }, 'io') : null,
+            st === 'viewed' ? el('span', { class: 'ok' }, '✓') : null);
+        }))));
+    }
+  };
+  document.addEventListener('click', e => {
+    const r = e.target.closest('.ln.elided'); if (!r) return;
+    const id = r.dataset.run;
+    document.querySelectorAll('[data-in="' + id + '"]').forEach(x => x.classList.remove('hid'));
+    document.querySelectorAll('.ln.elided[data-run="' + id + '"]').forEach(x => x.remove());
+  });
 
   render();
   if (state.notes.length) panel.classList.add('sd-open');

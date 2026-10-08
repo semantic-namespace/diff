@@ -11,18 +11,27 @@
 
 (defn- src [n] (str "(ns a)\n(defn f [x]\n" (str/join "\n" (for [i (range n)] (str "  (step-" i " x)"))) ")\n"))
 
-(deftest a-long-form-shows-only-its-changed-region
+(deftest a-long-form-shows-its-changed-lines-and-elides-the-rest
   (let [old (src 30)
-        h (page-of old (str/replace old "(step-25 x)" "(step-25 y)"))
-        excerpt (second (re-find #"(?s)<div class=\"sbs excerpt\">(.*?)</div>" h))]
-    (is excerpt)
-    (is (str/includes? excerpt "step-23"))
-    (is (not (str/includes? excerpt "step-10")))
-    (is (str/includes? excerpt "⋮ 24 lines"))))
+        h (page-of old (str/replace old "(step-25 x)" "(step-25 y)"))]
+    (is (str/includes? h "class=\"panes\""))
+    (is (re-find #"ln elided[^>]*>.*?⋮ 24 lines" h) "the unchanged start is folded into one row")
+    (is (re-find #"class=\"ln ln-del\"|<mark class=\"del\">" h))
+    (is (str/includes? h "<span class=\"gut\">27</span>") "head lines carry their line numbers")))
 
 (deftest a-short-form-is-shown-whole
   (let [old (src 4)]
-    (is (not (str/includes? (page-of old (str/replace old "(step-2 x)" "(step-2 y)")) "sbs excerpt")))))
+    (is (not (str/includes? (page-of old (str/replace old "(step-2 x)" "(step-2 y)")) "ln elided")))))
+
+(deftest base-and-head-rows-line-up
+  (let [old "(ns a)\n(defn f [x]\n  (a x)\n  (b x))\n"
+        new "(ns a)\n(defn f [x]\n  (a x)\n  (new-step x)\n  (b x))\n"
+        h (page-of old new)
+        rows (fn [pane] (count (re-seq #"class=\"ln" pane)))
+        [base head] (rest (str/split h #"class=\"pane\""))]
+    (is (= (rows base) (rows head)) "a spacer stands in for the inserted line")
+    (is (not (str/includes? head "ln spacer")) "the head side has every line")
+    (is (str/includes? base "ln spacer"))))
 
 (deftest sibling-changes-print-their-shared-path-once
   (let [out (with-out-str
@@ -39,3 +48,8 @@
     (is (str/includes? h "<span class=\"t-head\">g</span>"))
     (is (str/includes? h "<span class=\"t-kw\">:k</span>"))
     (is (str/includes? h "<mark class=\"add\"><span class=\"t-str\">&quot;t&quot;</span></mark>") "a changed string is marked and coloured")))
+
+(deftest a-line-changed-in-place-faces-its-counterpart
+  (let [old "(ns a)\n(defn f [x]\n  (a x)\n  (b x))\n"
+        h (page-of old (str/replace old "(a x)" "(a y)"))]
+    (is (not (str/includes? h "ln spacer")))))

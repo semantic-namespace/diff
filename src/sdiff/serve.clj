@@ -125,6 +125,7 @@
     (binding [decorate/*ctx* ctx]
       (html/page (str "https://github.com/" repo) repo [r]
                  :names (names-of r)
+                 :shell true
                  :before (switcher ref (when-not view-name grouping))
                  :body (cond v (view/render r v)
                              view-name [:p.deco.deco-problem (str "no view named " (pr-str view-name) " for this PR; views: " (pr-str (keys (:views review))))]
