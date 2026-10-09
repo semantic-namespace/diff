@@ -24,11 +24,13 @@
   (let [t (names/table report)
         h [:div {:data-file "src/co/acme/billing/invoice.clj"}
            [:p "in src/co/acme/billing/invoice.clj: :co.acme.billing.spec.invoice/lines"]
-           [:pre.code "(ns co.acme.billing.spec.invoice)"]]
+           [:pre.code "(ns co.acme.billing.spec.invoice)"]
+           [:div.panes [:div.pane [:span.cd ":co.acme.billing.spec.invoice/lines"]]]]
         out (names/shorten-hiccup t h)]
     (is (= {:data-file "src/co/acme/billing/invoice.clj"} (second out)))
     (is (= "in invoice.clj: :spec.invoice/lines" (second (nth out 2))))
     (is (= [:pre.code "(ns co.acme.billing.spec.invoice)"] (nth out 3)))
+    (is (= (nth h 4) (nth out 4)) "code panes keep qualified names whole")
     (is (= {"co.acme.billing.spec.invoice" "spec.invoice"}
            (:nss (names/used t (apply str (repeat 3 ":co.acme.billing.spec.invoice/lines "))))) "the legend lists only names the page uses")
     (is (empty? (:nss (names/used t "once :co.acme.billing.spec.invoice/lines"))) "a name used once costs more in the legend than it saves")))

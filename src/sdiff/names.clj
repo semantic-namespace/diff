@@ -90,9 +90,15 @@
 
 (defn shorten-text [t s] (if (and t (string? s)) ((replacer t) s) s))
 
+(defn- source?
+  "A source block: `:pre` or a code pane, whose text stays as written."
+  [x]
+  (and (vector? x) (keyword? (first x))
+       (let [t (name (first x))] (or (str/starts-with? t "pre") (str/starts-with? t "div.pane")))))
+
 (defn shorten-hiccup
   "Rewrites strings in a hiccup tree, leaving attribute maps and source blocks
-  (`:pre`) alone, so data attributes and code stay exact."
+  alone, so data attributes and code stay exact."
   [t h]
   (if-not t
     h
@@ -100,7 +106,7 @@
       (letfn [(walk* [x]
                 (cond (string? x) (r x)
                       (map? x) x
-                      (and (vector? x) (keyword? (first x)) (str/starts-with? (name (first x)) "pre")) x
+                      (source? x) x
                       (vector? x) (mapv walk* x)
                       (seq? x) (map walk* x)
                       :else x))]
@@ -119,7 +125,7 @@
 (defn hiccup-strings [h]
   (cond (string? h) [h]
         (map? h) []
-        (and (vector? h) (keyword? (first h)) (str/starts-with? (name (first h)) "pre")) []
+        (source? h) []
         (sequential? h) (mapcat hiccup-strings h)
         :else []))
 
