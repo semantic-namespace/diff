@@ -71,3 +71,11 @@
   (let [h (page-of "(ns a)\n(defn f [x]\n  (a x)\n  (gone x)\n  (b x))\n" "(ns a)\n(defn f [x]\n  (a x)\n  (b x))\n")
         [base] (rest (str/split h #"class=\"pane\""))]
     (is (re-find #"class=\"ln ln-del\"><span class=\"gut\">4</span>" base))))
+
+(deftest a-data-form-is-named-by-the-path-its-changes-share
+  (let [fr (core/file-report "deps.edn"
+                             "{:paths [\"src\"]\n :aliases {:test {:extra-paths [\"test\"] :main-opts [\"-m\" \"x\"]}}}\n"
+                             "{:paths [\"src\"]\n :aliases {:test {:extra-paths [\"test\" \"t2\"] :main-opts [\"-m\" \"y\"]}}}\n")
+        h (str (hc/html (html/form-view fr (first (:forms fr)))))]
+    (is (str/includes? h "data-label=\":aliases › :test\""))
+    (is (not (str/includes? (page-of "(ns a)\n(defn f [x] (a x))\n" "(ns a)\n(defn f [x] (b x))\n") "data-label")) "a call keeps its own name")))

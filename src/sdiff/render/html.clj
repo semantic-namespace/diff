@@ -288,14 +288,32 @@
           ps (distinct (keep phrase changes))]
       (str (str/join ", " (take 2 ps)) (when (> (count ps) 2) (str ", +" (- (count ps) 2) " more"))))))
 
+(defn- common-prefix [ps]
+  (reduce (fn [a b] (vec (map first (take-while (fn [[x y]] (= x y)) (map vector a b))))) ps))
+
+(defn data-label
+  "What to call a top-level form that is data, not a call, such as the map an
+  EDN file holds: the path its changes share, else their first steps. Nil for
+  a call, whose head and name already say what it is."
+  [node changes]
+  (when (and node (not= :list (n/tag (sdiff.core/unwrap node))))
+    (let [ps (keep #(seq (:path %)) changes)
+          pre (common-prefix (map vec ps))]
+      (some-> (cond (seq pre) (fmt-path pre)
+                    (seq ps) (str/join ", " (take 3 (distinct (map #(fmt-path [(first %)]) ps))))
+                    :else (name (n/tag (sdiff.core/unwrap node))))
+              (str/replace #"(^|› )key " "$1")))))
+
 (defn form-view [{:keys [old new path]} {:keys [id was changes extraction note]}]
   (let [op0 (:op (first changes))
         full? (#{:added-form :removed-form} op0)
         node-old (when-not (= op0 :added-form) (get (index old) (or was id)))
-        node-new (when-not (= op0 :removed-form) (get (index new) id))]
+        node-new (when-not (= op0 :removed-form) (get (index new) id))
+        dl (data-label (or node-new node-old) changes)]
     [:section.form {:id (decorate/anchor {:path path} {:id id}) :data-file path :data-form (str/join " " (remove nil? (map str id)))
+                    :data-label dl
                     :data-status (case op0 :added-form "new" :removed-form "removed" "changed")}
-     [:h3 [:code.fname {:title (str/join " " (map str id))} (str/join " " (map str id))]
+     [:h3 [:code.fname {:title (or dl (str/join " " (map str id)))} (or dl (str/join " " (map str id)))]
       [:span.sum (summary {:id id :changes changes})]
       (case op0 :added-form [:span.tag.tag-add "new"] :removed-form [:span.tag.tag-del "removed"] nil)
       (when was [:span.tag.tag-note (str "was " (str/join " " (remove nil? (map str was))))])

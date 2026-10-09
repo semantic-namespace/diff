@@ -218,7 +218,7 @@
     const head = panel.querySelector('.sd-head'), actions = panel.querySelector('.sd-body > .sd-row');
     head.replaceChildren(el('strong', {}, '▴ Review'), count,
       settings['key-hints'] ? el('span', { class: 'sd-keys' }, el('kbd', {}, 'j'), el('kbd', {}, 'k'), ' move · ', el('kbd', {}, 'v'), ' viewed, next · ',
-                                                         el('kbd', {}, 'b'), ' base · ', el('kbd', {}, 'c'), ' comment') : null,
+                                                         el('kbd', {}, 'b'), ' base · ', el('kbd', {}, 'c'), ' comment · ', el('kbd', {}, 'u'), ' back') : null,
       el('span', { class: 'sd-spacer' }), actions);
     actions.addEventListener('click', e => e.stopPropagation());
   }
@@ -291,7 +291,7 @@
       const fpath = h.querySelector('.fpath');
       if (fpath) { fpath.title = sec.dataset.file; const parts = fpath.textContent.split('/'); if (parts.length > 2) fpath.textContent = parts.slice(-2).join('/'); }
       const fname = h.querySelector('.fname');
-      if (fname) fname.textContent = shortName(sec.dataset.form);
+      if (fname) fname.textContent = sec.dataset.label || shortName(sec.dataset.form);
       h.prepend(el('span', { class: 'dot ' + (sec.dataset.status || 'changed') }));
       const r = riskOf(sec);
       const sum = h.querySelector('.sum');
@@ -370,11 +370,12 @@
       if (hit) { frag.append(t.slice(last)); n.replaceWith(frag); }
     });
   }
+  const depth = () => (history.state && history.state.sdDepth) || 0;
   function goTo(id, push) {
     const t = document.getElementById(id);
     if (!t || !t.matches('section.form')) return false;
     let g = t.closest('.sd-folded'); while (g) { g.classList.remove('sd-folded'); g = g.parentElement && g.parentElement.closest('.sd-folded'); }
-    if (push) history.pushState({ sd: id }, '', '#' + id);
+    if (push) history.pushState({ sd: id, sdDepth: depth() + 1 }, '', '#' + id);
     toggleRow(t, true, true);
     window.scrollTo({ top: window.scrollY + t.getBoundingClientRect().top - 70 });
     t.classList.remove('sd-flash'); void t.offsetWidth; t.classList.add('sd-flash');
@@ -420,6 +421,8 @@
     else if (e.key === 'k') step(-1);
     else if (e.key === 'v' && openSec) viewedNext(openSec);
     else if (e.key === 'b' && openSec) { openSec.classList.toggle('show-base'); const t = [...openSec.querySelectorAll('.tbar .tog')].find(x => x.textContent === 'Base'); if (t) t.classList.toggle('on', openSec.classList.contains('show-base')); }
+    else if (e.key === 'u' || e.key === '[') { if (depth() > 0) history.back(); }
+    else if (e.key === ']') history.forward();
     else if (e.key === 'c' && openSec) { e.preventDefault(); openEditor(openSec.querySelector('.tbar'), { file: openSec.dataset.file, form: openSec.dataset.form }); }
     else return;
     e.preventDefault();
