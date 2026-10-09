@@ -345,11 +345,52 @@
       el('button', { type: 'button', class: 'tact', onclick: () => openEditor(sec.querySelector('.tbar'), base) }, 'Comment ', el('kbd', {}, 'c')),
       el('button', { type: 'button', class: 'tact go', onclick: () => viewedNext(sec) }, 'Viewed, next ', el('kbd', {}, 'v')));
   }
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function linkCode(sec) {
+    if (sec.dataset.linked) return;
+    sec.dataset.linked = '1';
+    const pats = [...sec.querySelectorAll(':scope > .related a.goto')]
+      .map(a => ({ id: a.dataset.goto, name: a.dataset.name }))
+      .filter(t => t.name && !/\s/.test(t.name))
+      .map(t => ({ id: t.id, re: new RegExp('^' + (t.name.startsWith(':') ? esc(t.name) : '(?:[\\w.\\-]+/)?' + esc(t.name.split('/').pop())) + '$') }));
+    if (!pats.length) return;
+    const any = new RegExp('(^|[\\s()\\[\\]{}@^`~\'#,])([:\\w.\\-/*+!?<>=]+)(?=$|[\\s()\\[\\]{},])', 'g');
+    const walker = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => n.parentElement.closest('.pane .cd') && !n.parentElement.closest('.t-str, .t-cmt, a') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+    const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(n => {
+      const t = n.nodeValue; let last = 0, m; const frag = document.createDocumentFragment(); let hit = false;
+      any.lastIndex = 0;
+      while ((m = any.exec(t))) {
+        const p = pats.find(p => p.re.test(m[2])); if (!p) continue;
+        const start = m.index + m[1].length;
+        frag.append(t.slice(last, start), el('a', { class: 'goto code-goto', href: '#' + p.id, 'data-goto': p.id, title: 'Go to this change' }, m[2]));
+        last = start + m[2].length; hit = true;
+      }
+      if (hit) { frag.append(t.slice(last)); n.replaceWith(frag); }
+    });
+  }
+  function goTo(id, push) {
+    const t = document.getElementById(id);
+    if (!t || !t.matches('section.form')) return false;
+    let g = t.closest('.sd-folded'); while (g) { g.classList.remove('sd-folded'); g = g.parentElement && g.parentElement.closest('.sd-folded'); }
+    if (push) history.pushState({ sd: id }, '', '#' + id);
+    toggleRow(t, true, true);
+    window.scrollTo({ top: window.scrollY + t.getBoundingClientRect().top - 70 });
+    t.classList.remove('sd-flash'); void t.offsetWidth; t.classList.add('sd-flash');
+    return true;
+  }
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a.goto'); if (!a) return;
+    if (goTo(a.dataset.goto, true)) { e.preventDefault(); e.stopPropagation(); }
+  });
+  window.addEventListener('popstate', () => { const id = location.hash.slice(1); if (id) goTo(id, false); });
   function toggleRow(sec, open, quiet) {
     const want = open === undefined ? !sec.classList.contains('open') : open;
     if (openSec && openSec !== sec) openSec.classList.remove('open');
     sec.classList.toggle('open', want);
     if (want) {
+      linkCode(sec);
       if (!sec.querySelector(':scope > .tbar')) {
         if (settings['always-base']) sec.classList.add('show-base');
         sec.querySelector(':scope > h3').after(toolbar(sec));
@@ -405,5 +446,5 @@
 
   render();
   if (state.notes.length) panel.classList.add('sd-open');
-  if (shellPage) { const first = visibleCards().find(s => formStatus(keyOf(s)) !== 'viewed'); if (first) toggleRow(first, true, true); }
+  if (shellPage && !(location.hash && goTo(location.hash.slice(1), false))) { const first = visibleCards().find(s => formStatus(keyOf(s)) !== 'viewed'); if (first) toggleRow(first, true, true); }
 })();

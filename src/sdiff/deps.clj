@@ -450,6 +450,46 @@
              (when (and (not (:removed? x)) (seq (:reaches-added x))) (list "now reaches " (tags "tag-ext" (:reaches-added x))))
              (when (seq (:reaches-removed x)) (list "no longer reaches " (tags "tag-del" (:reaches-removed x))))])))
 
+(defonce ^:private changed-by-report (atom {}))
+
+(defn- changed-nodes
+  "Every changed form of the report present at head, by its node: its anchor on
+  the page and the name code uses for it."
+  [d report]
+  (let [k [(get-in report [:pr :repo]) (:base report) (:head report)]]
+    (or (@changed-by-report k)
+        (let [head (:head d)
+              m (into {} (for [f (:clj report) :when (= :semantic (:verdict f)) form (:forms f)
+                               :let [n (node-of head (:path f) (:new f) (:id form))] :when n]
+                           [n {:anchor (decorate/anchor f form) :label (qualified head n) :test (boolean (get-in head [:forms n :test]))}]))]
+          (swap! changed-by-report assoc k m)
+          m))))
+
+(defn- related
+  "The other changed forms this one calls, and those that call it, at head."
+  [d report file form]
+  (when-let [h (node-of (:head d) (:path file) (:new file) (:id form))]
+    (let [changed (changed-nodes d report)
+          pick (fn [ns] (sort-by :label (keep changed (disj (set ns) h))))]
+      (let [{tests true users false} (group-by :test (pick (get-in d [:head :callers h])))]
+        {:calls (pick (concat (get-in d [:head :calls h]) (get-in d [:head :may h])))
+         :called-by users
+         :tested-by tests}))))
+
+(defn- goto [{:keys [anchor label]}]
+  [:a.goto {:href (str "#" anchor) :data-goto anchor :data-name label} [:code label]])
+
+(defn- related-line [{:keys [calls called-by tested-by]}]
+  (when (or (seq calls) (seq called-by) (seq tested-by))
+    (let [some-of (fn [xs n] (concat (interpose ", " (map goto (take n xs)))
+                                     (when (> (count xs) n) [[:span.mute (str " +" (- (count xs) n))] [:span {:hidden true} (map goto (drop n xs))]])))]
+      [:div.related
+       [:span.mute "changed here · "]
+       (interpose [:span.sep " · "]
+                  (remove nil? [(when (seq calls) (list "calls " (some-of calls 8)))
+                                (when (seq called-by) (list "used by " (some-of called-by 8)))
+                                (when (seq tested-by) (list "tested by " (some-of tested-by 2)))]))])))
+
 (defn form-line [ctx file form]
   (let [report (:report ctx)]
     (when-let [d (data report)]
@@ -458,8 +498,11 @@
               full (or (some #(when (= (:id form) (:id %)) %) (:forms file)) form)
               test-file? (re-find (re-pattern (:test-paths defaults)) (str (:path file)))
               x (when-not test-file? (form-deps d file full))
-              parts (when x (line-parts x))]
-          (when (seq parts)
+              parts (when x (line-parts x))
+              rel (related-line (related d report file full))]
+          (list
+           rel
+           (when (seq parts)
             [:div.deps-line {:title (when (seq (:all-reach x)) (str "reaches " (str/join ", " (map name (:all-reach x)))))
                              :data-new-io (when (seq (:reaches-added x)) (str/join " " (map name (:reaches-added x))))
                              :data-outside (:outside-callers x 0)
@@ -472,7 +515,7 @@
                   (when (pos? more) (str " · +" more " ns"))]))
              (when (seq (:callers x))
                [:details.deps-callers [:summary "callers"]
-                [:ul (for [[ns cs] (:callers-by-ns x)] [:li [:code.mute ns] " " (codes cs)])]])]))))))
+                [:ul (for [[ns cs] (:callers-by-ns x)] [:li [:code.mute ns] " " (codes cs)])]])])))))))
 
 (decorate/add-header-decorator! ::deps header)
 (decorate/add-grouper! :callers "callers" "deps · clj-kondo over the whole repository" by-callers)
