@@ -78,9 +78,12 @@
     (str (hash [(src old (or was id)) (src new id) (count changes)]))))
 
 (defn- form-index [r]
-  (into {} (for [f (:clj r) fm (:forms f)]
-             [(form-key (:path f) (:id fm))
-              {:fp (fingerprint f fm) :was (when (:was fm) (form-key (:path f) (:was fm)))}])))
+  (merge
+   (into {} (for [f (:clj r) fm (:forms f)]
+              [(form-key (:path f) (:id fm))
+               {:fp (fingerprint f fm) :was (when (:was fm) (form-key (:path f) (:was fm)))}]))
+   (into {} (for [{:keys [path patch status]} (:other r)]
+              [(str path "|file") {:fp (str (hash [status patch]))}]))))
 
 (defn- page-config [r]
   (let [{:keys [repo num url author]} (:pr r)]

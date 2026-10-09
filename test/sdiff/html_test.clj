@@ -79,3 +79,15 @@
         h (str (hc/html (html/form-view fr (first (:forms fr)))))]
     (is (str/includes? h "data-label=\":aliases › :test\""))
     (is (not (str/includes? (page-of "(ns a)\n(defn f [x] (a x))\n" "(ns a)\n(defn f [x] (b x))\n") "data-label")) "a call keeps its own name")))
+
+(deftest a-file-that-is-not-clojure-is-a-row-with-its-patch
+  (let [h (str (hc/html (html/other-files "https://github.com/o/r/pull/1"
+                                          [{:path "cicd/main.tf" :status "M" :additions 1 :deletions 1 :patch "@@ -1,2 +1,2 @@\n a\n-b\n+c"}
+                                           {:path "cicd/prod.enc.json" :status "M" :additions 3 :deletions 3 :patch "@@ -1 +1 @@\n-x\n+y"}
+                                           {:path "big.sql" :status "A" :additions 9000 :deletions 0 :patch nil}])))]
+    (is (= 3 (count (re-seq #"class=\"form other-file\"" h))))
+    (is (str/includes? h "files#diff-") "each row links to its diff on GitHub")
+    (is (re-find #"class=\"ln ln-del\"><span class=\"gut\"></span><span class=\"cd\">b<" h))
+    (is (re-find #"class=\"ln ln-add\"><span class=\"gut\">2</span><span class=\"cd\">c<" h) "added lines carry their head line number")
+    (is (str/includes? h "not shown: encrypted") "an encrypted file shows no patch")
+    (is (str/includes? h "GitHub sent no patch"))))

@@ -379,6 +379,57 @@
      (for [{:keys [login state at url]} others]
        (list " · " [:a {:href url :target "_blank"} login " " (standing-word state)] " " [:span.mute at]))]))
 
+(defn- sha256 [s]
+  (apply str (map #(format "%02x" %) (.digest (java.security.MessageDigest/getInstance "SHA-256") (.getBytes (str s) "UTF-8")))))
+
+(def ^:private hidden-patch #"\.enc\.|\.(lock|min\.js|map|png|jpe?g|gif|svg|ico|woff2?|jar|zip|gz)$|(^|/)package-lock\.json$")
+
+(defn- patch-lines
+  "A GitHub patch as page lines: each hunk header a folded row, then its lines
+  numbered on the head side, added ones green and removed ones red."
+  [patch]
+  (loop [[l & more] (str/split-lines patch) n 0 out []]
+    (if (nil? l)
+      (seq out)
+      (if-let [[_ start] (re-find #"^@@ -\d+(?:,\d+)? \+(\d+)" l)]
+        (recur more (parse-long start) (conj out [:div.ln.hunk [:span.gut] [:span.cd l]]))
+        (let [c (first l) text (subs l (min 1 (count l)))]
+          (case c
+            \+ (recur more (inc n) (conj out [:div.ln.ln-add [:span.gut n] [:span.cd text]]))
+            \- (recur more n (conj out [:div.ln.ln-del [:span.gut] [:span.cd text]]))
+            \\ (recur more n out)
+            (recur more (inc n) (conj out [:div.ln [:span.gut n] [:span.cd text]]))))))))
+
+(defn other-file-view
+  "A file that is not Clojure: its status and size, a link to its diff on
+  GitHub, and the patch GitHub sent, unless it is encrypted, generated or
+  binary, or GitHub sent none."
+  [pr-url {:keys [path status additions deletions patch]}]
+  (let [word ({"A" "added" "D" "deleted" "R" "renamed"} status "modified")
+        lines (when (and patch (not (re-find hidden-patch path))) (str/split-lines patch))]
+    [:section.form.other-file {:id (str "other-" (Math/abs (hash path))) :data-file path :data-form "file"
+                               :data-label (last (str/split path #"/")) :data-other "1"
+                               :data-status (case status "A" "new" "D" "removed" "changed")}
+     [:h3 [:code.fname {:title path} (last (str/split path #"/"))]
+      [:span.sum (str word (when additions (str " · +" additions " −" deletions)))]
+      [:span.fpath {:title path} path]]
+     [:p.other-links
+      (when pr-url [:a {:href (str pr-url "/files#diff-" (sha256 path)) :target "_blank"} "view on GitHub"])
+      (cond (nil? patch) [:span.mute " · GitHub sent no patch for this file"]
+            (nil? lines) [:span.mute " · not shown: encrypted, generated or binary"]
+            (> (count lines) 800) [:span.mute (str " · the first 800 of " (count lines) " patch lines")])]
+     (when lines
+       [:div.panes.single [:div.pane [:div.pane-h [:span "patch"] [:span.sha ""]]
+                           [:div.scroll (patch-lines (str/join "\n" (take 800 lines)))]]])]))
+
+(defn other-files
+  "The PR's files that are not Clojure, as one group of rows."
+  [pr-url other]
+  (when (seq other)
+    [:section.group {:id "view-other"}
+     [:div.glabel "Other files" [:span.gcount]]
+     [:div.glist (for [o (sort-by :path other)] (other-file-view pr-url o))]]))
+
 (defn- pr-view [gh-url {:keys [num title clj other renames] :as r}]
   (let [counts (frequencies (map :verdict clj))]
     [:section.pr {:id (str "pr-" num)}
@@ -397,8 +448,10 @@
       (decorate/header r)]
      (map (partial file-view gh-url num) (sort-by (comp verdict-order :verdict) clj))
      (when (seq other)
-       [:details.other [:summary (str (count other) " non-Clojure files" (when gh-url ", shown by GitHub"))]
-        [:ul (for [{:keys [path]} other] [:li {:data-file path} (if gh-url [:a {:href (str gh-url "/pull/" num "/files") :target "_blank"} path] path)])]])]))
+       (if *shell*
+         (other-files (when gh-url (str gh-url "/pull/" num)) other)
+         [:details.other [:summary (str (count other) " non-Clojure files" (when gh-url ", shown by GitHub"))]
+          [:ul (for [{:keys [path]} other] [:li {:data-file path} (if gh-url [:a {:href (str gh-url "/pull/" num "/files") :target "_blank"} path] path)])]]))]))
 
 (def css (slurp (clojure.java.io/resource "sdiff/report.css")))
 

@@ -80,7 +80,8 @@
      (when (seq rest-forms)
        [:section.group {:id "view-rest"}
         [:div.glabel "Everything else" [:span.gcount]]
-        [:div.glist (for [[f form] rest-forms] (html/form-view f form))]]))))
+        [:div.glist (for [[f form] rest-forms] (html/form-view f form))]])
+     (html/other-files (get-in report [:pr :url]) (:other report)))))
 
 (declare render-full)
 

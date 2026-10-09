@@ -342,7 +342,7 @@
       tog('Callers ' + (d ? d.dataset.callers : ''), 'show-callers', !!d),
       tog('Change paths ' + paths, 'show-paths', paths > 0),
       el('span', { class: 'sd-spacer' }),
-      el('button', { type: 'button', class: 'tact', onclick: () => openEditor(sec.querySelector('.tbar'), base) }, 'Comment ', el('kbd', {}, 'c')),
+      sec.dataset.other ? null : el('button', { type: 'button', class: 'tact', onclick: () => openEditor(sec.querySelector('.tbar'), base) }, 'Comment ', el('kbd', {}, 'c')),
       el('button', { type: 'button', class: 'tact go', onclick: () => viewedNext(sec) }, 'Viewed, next ', el('kbd', {}, 'v')));
   }
   const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -423,7 +423,7 @@
     else if (e.key === 'b' && openSec) { openSec.classList.toggle('show-base'); const t = [...openSec.querySelectorAll('.tbar .tog')].find(x => x.textContent === 'Base'); if (t) t.classList.toggle('on', openSec.classList.contains('show-base')); }
     else if (e.key === 'u' || e.key === '[') { if (depth() > 0) history.back(); }
     else if (e.key === ']') history.forward();
-    else if (e.key === 'c' && openSec) { e.preventDefault(); openEditor(openSec.querySelector('.tbar'), { file: openSec.dataset.file, form: openSec.dataset.form }); }
+    else if (e.key === 'c' && openSec && !openSec.dataset.other) { e.preventDefault(); openEditor(openSec.querySelector('.tbar'), { file: openSec.dataset.file, form: openSec.dataset.form }); }
     else return;
     e.preventDefault();
   });

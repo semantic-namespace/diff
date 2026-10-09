@@ -189,3 +189,6 @@ a.goto:hover code{background:var(--sem-bg)}
 .pane a.code-goto:hover{background:var(--sem-bg);color:var(--sem-ink)}
 @keyframes sd-flash{from{box-shadow:inset 3px 0 0 var(--sem),0 0 0 2px var(--sem-ring)}to{box-shadow:none}}
 section.form.sd-flash{animation:sd-flash 1.2s ease-out}
+.other-links{font-size:12px;margin:.2rem 0 .4rem}
+.other-links a{color:var(--sem)}
+.ln.hunk .cd{color:var(--faint);font-style:italic}

@@ -69,7 +69,7 @@
 
 (defn pr-files [{:keys [repo num]}]
   (let [out (gh ["api" "--paginate" (str "repos/" repo "/pulls/" num "/files?per_page=100")
-                 "--jq" ".[] | {filename, status, previous_filename, patch}"])]
+                 "--jq" ".[] | {filename, status, previous_filename, patch, additions, deletions}"])]
     (for [l (str/split-lines out) :when (not (str/blank? l))] (json/parse-string l true))))
 
 (def ^:private status {"added" "A" "removed" "D" "renamed" "R" "modified" "M" "changed" "M" "copied" "C"})
@@ -101,8 +101,8 @@
         {:keys [files renames]} (core/rollup-renames (vec clj))]
     {:base (:base pr) :head (:head pr) :pr pr :num (:num pr) :title (:title pr)
      :clj files :renames renames
-     :other (vec (for [{:keys [filename] st :status} pr-fs :when (not (core/clj? filename))]
-                   {:status (status st "M") :path filename}))}))
+     :other (vec (for [{:keys [filename additions deletions patch] st :status} pr-fs :when (not (core/clj? filename))]
+                   {:status (status st "M") :path filename :additions additions :deletions deletions :patch patch}))}))
 
 (defonce ^:private cache (atom {}))
 
