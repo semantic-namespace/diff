@@ -28,10 +28,11 @@ removal and an addition.
 A pull request of [metosin/malli](https://github.com/metosin/malli/pull/1288),
 ordered by risk. Each changed form is one row: a one-line summary of what
 changed, at most one risk tag (new I/O, a changed signature, or how many forms
-in other namespaces call it), its file and a Viewed box. One row is open at a
-time, showing its head source with the changes marked; base, callers and
-change paths open on demand. `j`/`k` move, `v` marks viewed and opens the next,
-and the review bar at the bottom posts the review to GitHub.
+in other namespaces call it), its file and a Viewed box. The open row shows its
+head source with the change marked, and links to the other changed form it
+calls, both on the "changed here" line and in the code. Files that are not
+Clojure come last. `j`/`k` move, `v` marks viewed and opens the next, and the
+review bar at the bottom posts the review to GitHub.
 
 ![Ordered by risk](docs/img/report.png)
 
@@ -91,20 +92,38 @@ result plain data.
 bb sdiff serve [port]      # http://127.0.0.1:7878/
 ```
 
-Open a pull request by reference or URL. The page is the HTML report with a
-💬 button on every changed form and change path, and a review panel:
-verdict, summary, notes, a preview that shows where each note lands and the
-exact payload, and a post button that asks before sending. It posts through
-`gh` as you. The server listens on 127.0.0.1 only, and every write needs a
-token printed into the page, so other sites in the browser can't use it.
-Each changed form has its own Viewed tick, kept on this machine. A form you
-marked viewed shows "changed" when a later push changes its code, and keeps its
-mark through a rename. Viewed state, unsent notes and settings live in
+Open a pull request by reference or URL. The page lists the changed forms as
+rows, ordered by risk, by file or by the calls between them. Each row has a
+one-line summary of the change and at most one risk tag. One row is open at a
+time: its head source with the changes marked, red and green, and on demand
+the base side, its callers and the structural change paths.
+
+- **Keys.** `j`/`k` move between rows, `v` marks the open one viewed and opens
+  the next, `b` toggles the base side, `c` writes a note on it, `u` goes back.
+- **Related changes.** A changed form that calls, or is called by, another
+  changed form of the PR links to it, both on a "changed here" line and on the
+  names in its code. Following a link opens that form, and `u` or the
+  browser's back returns. A URL ending in `#form-…` opens on that form.
+- **Other files.** Files that are not Clojure come last, each with its status,
+  size, a link to its diff on GitHub and the patch GitHub sent (encrypted,
+  generated and binary files show the link only).
+- **Viewed.** Each row, Clojure or not, has its own Viewed tick, kept on this
+  machine and counted in the progress bar. A form you marked viewed shows
+  "changed" when a later push changes its code, and keeps its mark through a
+  rename.
+- **Review.** The bar at the bottom holds the verdict, the summary and your
+  notes, a preview that shows where each note lands and the exact payload,
+  and a post button that asks before sending.
+
+It posts through `gh` as you. The server listens on 127.0.0.1 only, and every
+write needs a token printed into the page, so other sites in the browser can't
+use it. Viewed state, unsent notes and settings live in
 `~/.local/state/sdiff/` (`SDIFF_STATE_DIR` overrides it), so they follow you
-across browsers. Settings, in the review panel: fold forms you mark viewed,
-fold files viewed on GitHub, mark a file viewed on GitHub once all its forms
-are viewed (off by default, it writes as you), and fold files that only change
-formatting, comments or names.
+across browsers. Settings, in the review panel: fold forms you mark viewed, fold
+files viewed on GitHub, mark a file viewed on GitHub once all its forms are
+viewed (off by default, it writes as you), fold files that only change
+formatting, comments or names, always show the base side, show the key hints,
+and skip the dependency analysis.
 
 `bb sdiff serve 7878 --host <address>` serves on another interface, such as a
 VPN address. Anyone who can reach that address can then read PRs and post
@@ -126,6 +145,32 @@ loginctl enable-linger $USER      # start at boot, without a login
 `systemctl --user restart sdiff` picks up a new checkout, `journalctl --user
 -u sdiff -f` follows its log. The service runs `gh` as you, so `gh auth status`
 must already work for your user.
+
+## What a change touches
+
+Beside the structural diff, the review page analyses the whole repository at
+the merge base and at the head with [clj-kondo](https://github.com/clj-kondo/clj-kondo),
+fetching each commit's Clojure sources once through `gh` (a tarball, cached in
+`~/.cache/sdiff/` and swept after 14 days unused). From the two call graphs it
+says, for each changed form:
+
+- who calls it at head, how many of them from other namespaces, and how many
+  are tests;
+- the calls, libraries and kinds of I/O it gained or lost. I/O is read from the
+  libraries a form reaches through its calls, protocol methods with a single
+  implementation, and functions generated by HugSQL: `next.jdbc` is postgres,
+  `carmine` is redis, `clj-http` is http, and so on;
+- namespaces that start requiring each other, and new namespace cycles.
+
+That is what the risk order uses: a change that now reaches I/O, changes a
+function's arguments, or has callers in ten or more forms of other namespaces
+comes first. The analysis is heuristic: functions passed as values, protocols
+with several implementations and calls by keyword are not followed, unless a
+bridge says how. `sdiff.deps/add-bridge!` adds edges a call graph cannot see;
+`keyword-bridge` covers the common case of a keyword defined in one place and
+used elsewhere, and `clojure.spec` definitions are bridged by default. The
+I/O table, test paths, ignored namespaces and code generators can be set per
+repository in `~/.config/sdiff/deps.edn`, keyed by `owner/repo`.
 
 ## Derived and inferred
 
@@ -169,5 +214,7 @@ exercises yet are covered by small inline sources in the test.
 
 ## Scope
 
-This layer is syntactic. It knows nothing about what a form means in a given
-codebase; a registry or ontology layer can take the EDN report and attach that.
+The structural diff is syntactic, and the dependency analysis follows only what
+clj-kondo can resolve. Neither knows what a form means in a given codebase. A
+registry or ontology layer can take the EDN report, or register groupings and
+decorations on the page, and attach that meaning.
