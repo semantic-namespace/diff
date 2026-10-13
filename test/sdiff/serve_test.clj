@@ -60,3 +60,42 @@
        (is (= {"against" "main"} (:params (get-in review [:views "v"]))))
        (let [body (:body (serve/handler {:request-method :get :uri "/pr" :query-string "ref=o%2Fr%237&against=dev"}))]
          (is (str/includes? body "made with against=main")))))))
+
+(defn- with-host-routes [f]
+  (let [before @serve/host-routes]
+    (try (reset! serve/host-routes {}) (f)
+         (finally (reset! serve/host-routes before)))))
+
+(deftest a-host-route-renders-inside-the-shell-with-its-params-bound
+  (with-host-routes
+    #(serving
+      (fn [_]
+        (serve/add-route! :get "/env" "Environment" (fn [req] [:p.env "against " (get (:params req) "against") " " (get d/*params* "against") " " (count (:params req))]))
+        (let [res (serve/handler {:request-method :get :uri "/env" :query-string "against=main&other=x"})]
+          (is (= 200 (:status res)))
+          (is (str/includes? (:body res) "<title>Environment</title>"))
+          (is (str/includes? (:body res) "<p class=\"env\">against main main 1</p>"))
+          (is (not (str/includes? (:body res) "other=x")))
+          (is (str/includes? (:body (serve/handler {:request-method :get :uri "/"})) "href=\"/env\"")))))))
+
+(deftest a-host-route-returning-a-response-passes-through
+  (with-host-routes
+    #(do (serve/add-route! :post "/hook" "Hook" (fn [_] {:status 202 :headers {} :body "ok"}))
+         (is (= {:status 202 :headers {} :body "ok"}
+                (serve/handler {:request-method :post :uri "/hook" :headers {"x-sdiff-token" serve/token}})))
+         (is (= 403 (:status (serve/handler {:request-method :post :uri "/hook"})))))))
+
+(deftest a-host-route-cannot-replace-a-built-in
+  (with-host-routes
+    #(do (is (thrown? clojure.lang.ExceptionInfo (serve/add-route! :get "/pr" "x" (fn [_] nil))))
+         (is (thrown? clojure.lang.ExceptionInfo (serve/add-route! :post "/post" "x" (fn [_] nil))))
+         (is (empty? @serve/host-routes)))))
+
+(deftest unknown-paths-are-not-found-and-host-errors-are-500s
+  (with-host-routes
+    #(do (serve/add-route! :get "/boom" "Boom" (fn [_] (throw (ex-info "nope" {}))))
+         (is (= 404 (:status (serve/handler {:request-method :get :uri "/nothing"}))))
+         (is (= 404 (:status (serve/handler {:request-method :post :uri "/boom"}))))
+         (let [res (serve/handler {:request-method :get :uri "/boom"})]
+           (is (= 500 (:status res)))
+           (is (str/includes? (:body res) "nope"))))))

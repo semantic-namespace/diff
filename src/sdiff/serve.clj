@@ -59,6 +59,8 @@
     (try (f (json/parse-string (slurp (:body req)) true))
          (catch Exception e (json-response 400 {:error (ex-message e)})))))
 
+(declare host-routes)
+
 (defn- index-page []
   (str "<!doctype html>"
        (hc/html
@@ -74,7 +76,9 @@
             [:p "Open a pull request you can read with your gh login. Notes and the review are posted as you."]]
            [:form.open {:action "/pr" :method "get"}
             [:input {:name "ref" :placeholder "owner/repo#123 or https://github.com/owner/repo/pull/123" :required true :autofocus true}]
-            [:button {:type "submit"} "Open"]]]]])))
+            [:button {:type "submit"} "Open"]]
+           (when-let [pages (seq (for [[[m path] {:keys [title]}] (sort-by key @host-routes) :when (= :get m)] [path title]))]
+             [:ul.host-pages (for [[path title] pages] [:li [:a {:href (decorate/with-params path)} title]])])]]])))
 
 (defn form-key [file id] (str file "|" (str/join " " (remove nil? (map str id)))))
 
@@ -221,6 +225,48 @@
 (defn- settings-post [req]
   (authorized req (fn [{:keys [settings]}] (json-response 200 (state/save-settings! settings)))))
 
+(def ^:private builtin-routes
+  #{[:get "/"] [:get "/pr"] [:get "/viewed"] [:post "/viewed"] [:post "/annotate"] [:post "/view"]
+    [:get "/state"] [:post "/state"] [:post "/settings"] [:post "/draft"] [:post "/post"]})
+
+(defonce host-routes (atom {}))
+
+(defn add-route!
+  "Adds a page of the host's own. `f` takes the ring request, with `:params`
+  holding the declared request parameters, and returns either a ring response
+  (a map with `:status`) passed through as is, or hiccup, which is wrapped in
+  the same shell as the other pages under `title`. `decorate/*params*` is bound
+  while `f` runs. A route other than GET needs the page token, as the built-in
+  POSTs do. Registering a built-in route throws; registering a host
+  route again replaces it. `title` also lists a GET route on the index page."
+  [method path title f]
+  (let [k [method path]]
+    (when (builtin-routes k)
+      (throw (ex-info (str "built-in route " (pr-str k) " cannot be replaced") {:route k})))
+    (swap! host-routes assoc k {:title title :f f})))
+
+(defn- host-page [title content]
+  (str "<!doctype html>"
+       (hc/html
+        [:html {:lang "en"}
+         [:head [:meta {:charset "utf-8"}]
+          [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+          [:title title]
+          [:style (hc/raw (str (resource "report.css") (resource "review.css")))]]
+         [:body
+          [:div.wrap
+           [:div.intro [:h1 title] [:p [:a {:href "/"} "Structural review"]]]
+           content]]])))
+
+(defn- host-route [{:keys [request-method uri] :as req}]
+  (if-let [{:keys [title f]} (get @host-routes [request-method uri])]
+    (if (and (not= :get request-method) (not= token (get-in req [:headers "x-sdiff-token"])))
+      (json-response 403 {:error "missing or wrong token; reload the page"})
+      (let [params (decorate/request-params (query-params req))
+            out (binding [decorate/*params* params] (f (assoc req :params params)))]
+        (if (and (map? out) (:status out)) out (html-response (host-page title out)))))
+    {:status 404 :body "not found"}))
+
 (defn handler [{:keys [request-method uri] :as req}]
   (try
     (case [request-method uri]
@@ -241,7 +287,7 @@
       [:post "/settings"] (settings-post req)
       [:post "/draft"] (review-call req false)
       [:post "/post"]  (review-call req true)
-      {:status 404 :body "not found"})
+      (host-route req))
     (catch Exception e
       {:status 500 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (str "error: " (ex-message e))})))
 
