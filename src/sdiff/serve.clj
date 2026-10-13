@@ -43,6 +43,13 @@
                    (when (= a k) (java.net.URLDecoder/decode (or b "") "UTF-8"))))
         (str/split (or (:query-string req) "") #"&")))
 
+(defn- query-params
+  "The request's query string as a map of string to string."
+  [req]
+  (into {} (for [kv (str/split (or (:query-string req) "") #"&") :when (seq kv)
+                 :let [[a b] (str/split kv #"=" 2)]]
+             [(java.net.URLDecoder/decode a "UTF-8") (java.net.URLDecoder/decode (or b "") "UTF-8")])))
+
 (defn- html-response [s] {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body s})
 (defn- json-response [status m] {:status status :headers {"Content-Type" "application/json"} :body (json/generate-string m)})
 
@@ -100,42 +107,44 @@
           (swap! names-cache assoc k t)
           t))))
 
-(defn- pr-text [ref grouping]
-  (let [r (github/cached-report ref)
-        {:keys [repo num]} (:pr r)
-        ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)))]
-    (binding [decorate/*ctx* ctx]
-      (let [g (when grouping (decorate/grouping ctx grouping))
-            body (str (when g (group/outline-text g)) (with-out-str (text/print-report r)))
-            used (names/used (names-of r) body)]
-        (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n"
-             (html/status-text (github/pr-status (:pr r))) "\n"
-             (names/legend-text used) "\n"
-             (names/shorten-text used body))))))
+(defn- pr-text [ref grouping params]
+  (binding [decorate/*params* params]
+    (let [r (github/cached-report ref)
+          {:keys [repo num]} (:pr r)
+          ctx (assoc (@decorate/context-fn r) :annotations (:annotations (state/review repo num)) :params params)]
+      (binding [decorate/*ctx* ctx]
+        (let [g (when grouping (decorate/grouping ctx grouping))
+              body (str (when g (group/outline-text g)) (with-out-str (text/print-report r)))
+              used (names/used (names-of r) body)]
+          (str "#" num " " (:title r) "\n" (get-in r [:pr :url]) "\nrange " (subs (:base r) 0 12) ".." (subs (:head r) 0 12) "\n"
+               (html/status-text (github/pr-status (:pr r))) "\n"
+               (names/legend-text used) "\n"
+               (names/shorten-text used body)))))))
 
 (def ^:private orders [["risk" "risk"] ["file" "file"] ["calls" "calls"]])
 
 (defn- switcher [ref current]
-  (let [href (fn [g] (str "/pr?ref=" (java.net.URLEncoder/encode ref "UTF-8") "&group=" g))
+  (let [href (fn [g] (decorate/with-params (str "/pr?ref=" (java.net.URLEncoder/encode ref "UTF-8") "&group=" g)))
         known (set (map (comp name :key) @decorate/groupers))]
     [:nav.group-switch "Order "
      (for [[g label] orders :when (or (= "file" g) (known g))]
        [:a {:href (href g) :class (when (= g current) "on")} label])]))
 
-(defn- pr-page [ref view-name grouping]
+(defn- pr-page [ref view-name grouping params]
   (let [r (github/cached-report ref)
         {:keys [repo num]} (:pr r)
         config (page-config r)
         r (assoc r :status (:status config))
         review (state/review repo num)
-        ctx (assoc (@decorate/context-fn r) :annotations (:annotations review))
+        ctx (binding [decorate/*params* params] (assoc (@decorate/context-fn r) :annotations (:annotations review) :params params))
         grouping (or grouping (when-not view-name (:default-order (state/settings))))
         grouping (when-not (= "file" grouping) grouping)
-        v (cond view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name)))
-                grouping (some-> (decorate/grouping ctx grouping) (assoc :compact true)))
+        v (binding [decorate/*params* params]
+            (cond view-name (or (get (:views review) view-name) (get (:views review) (keyword view-name)))
+                  grouping (some-> (decorate/grouping ctx grouping) (assoc :compact true))))
         grouping (if (and grouping (not view-name) (empty? (:sections v))) nil grouping)
         v (if (or view-name grouping) v nil)]
-    (binding [decorate/*ctx* ctx]
+    (binding [decorate/*ctx* ctx decorate/*params* params]
       (html/page (str "https://github.com/" repo) repo [r]
                  :names (names-of r)
                  :shell true
@@ -147,27 +156,31 @@
                  :extra-body (list [:script {:id "sdiff-config" :type "application/json"} (hc/raw (json/generate-string config))]
                                    [:script (hc/raw (resource "review.js"))])))))
 
+(defn- body-params [params] (decorate/request-params (update-keys (or params {}) name)))
+
 (defn- view-post [req]
-  (authorized req (fn [{:keys [pr name view]}]
-                    (let [{:keys [repo num]} (github/parse-pr pr)
-                          r (github/cached-report pr)
-                          v (if (string? view) (clojure.edn/read-string view) view)
-                          ctx (@decorate/context-fn r)
-                          problems (view/validate ctx v)
-                          views (assoc (:views (state/review repo num)) name v)]
-                      (state/save-review! repo num {:views views})
-                      (json-response 200 {:url (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8") "&view=" (java.net.URLEncoder/encode name "UTF-8"))
-                                          :problems problems :views (keys views)})))))
+  (authorized req (fn [{:keys [pr name view params]}]
+                    (binding [decorate/*params* (body-params params)]
+                      (let [{:keys [repo num]} (github/parse-pr pr)
+                            r (github/cached-report pr)
+                            v (if (string? view) (clojure.edn/read-string view) view)
+                            ctx (assoc (@decorate/context-fn r) :params decorate/*params*)
+                            problems (view/validate ctx v)
+                            views (assoc (:views (state/review repo num)) name (decorate/stamp v))]
+                        (state/save-review! repo num {:views views})
+                        (json-response 200 {:url (decorate/with-params (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8") "&view=" (java.net.URLEncoder/encode name "UTF-8")))
+                                            :problems problems :views (keys views)}))))))
 
 (defn- annotate-post [req]
-  (authorized req (fn [{:keys [pr annotations]}]
-                    (let [{:keys [repo num]} (github/parse-pr pr)
-                          r (github/cached-report pr)
-                          ctx (@decorate/context-fn r)
-                          anns (vec (for [a annotations] (update a :on #(if (map? %) (update-keys % keyword) %))))
-                          problems (vec (keep (fn [a] (when-let [p (decorate/validate-ref ctx (:on a))] {:on (:on a) :problem p})) anns))]
-                      (state/save-review! repo num {:annotations anns})
-                      (json-response 200 {:url (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8")) :problems problems})))))
+  (authorized req (fn [{:keys [pr annotations params]}]
+                    (binding [decorate/*params* (body-params params)]
+                      (let [{:keys [repo num]} (github/parse-pr pr)
+                            r (github/cached-report pr)
+                            ctx (assoc (@decorate/context-fn r) :params decorate/*params*)
+                            anns (vec (for [a annotations] (decorate/stamp (update a :on #(if (map? %) (update-keys % keyword) %)))))
+                            problems (vec (keep (fn [a] (when-let [p (decorate/validate-ref ctx (:on a))] {:on (:on a) :problem p})) anns))]
+                        (state/save-review! repo num {:annotations anns})
+                        (json-response 200 {:url (decorate/with-params (str "/pr?ref=" (java.net.URLEncoder/encode (str repo "#" num) "UTF-8"))) :problems problems}))))))
 
 (defn- review-call [req post?]
   (if (not= token (get-in req [:headers "x-sdiff-token"]))
@@ -213,9 +226,10 @@
     (case [request-method uri]
       [:get "/"]       (html-response (index-page))
       [:get "/pr"]     (if-let [ref (query-param req "ref")]
-                         (if (= "text" (query-param req "format"))
-                           {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref (query-param req "group"))}
-                           (html-response (pr-page ref (query-param req "view") (query-param req "group"))))
+                         (let [params (decorate/request-params (query-params req))]
+                           (if (= "text" (query-param req "format"))
+                             {:status 200 :headers {"Content-Type" "text/plain; charset=utf-8"} :body (pr-text ref (query-param req "group") params)}
+                             (html-response (pr-page ref (query-param req "view") (query-param req "group") params))))
                          {:status 302 :headers {"Location" "/"}})
       [:get "/viewed"] (try (json-response 200 (:files (github/viewed (query-param req "ref"))))
                             (catch Exception e (json-response 400 {:error (ex-message e)})))
