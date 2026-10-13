@@ -81,7 +81,9 @@
 (deftest a-host-route-returning-a-response-passes-through
   (with-host-routes
     #(do (serve/add-route! :post "/hook" "Hook" (fn [_] {:status 202 :headers {} :body "ok"}))
-         (is (= {:status 202 :headers {} :body "ok"} (serve/handler {:request-method :post :uri "/hook"}))))))
+         (is (= {:status 202 :headers {} :body "ok"}
+                (serve/handler {:request-method :post :uri "/hook" :headers {"x-sdiff-token" serve/token}})))
+         (is (= 403 (:status (serve/handler {:request-method :post :uri "/hook"})))))))
 
 (deftest a-host-route-cannot-replace-a-built-in
   (with-host-routes

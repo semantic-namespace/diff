@@ -236,7 +236,8 @@
   holding the declared request parameters, and returns either a ring response
   (a map with `:status`) passed through as is, or hiccup, which is wrapped in
   the same shell as the other pages under `title`. `decorate/*params*` is bound
-  while `f` runs. Registering a built-in route throws; registering a host
+  while `f` runs. A route other than GET needs the page token, as the built-in
+  POSTs do. Registering a built-in route throws; registering a host
   route again replaces it. `title` also lists a GET route on the index page."
   [method path title f]
   (let [k [method path]]
@@ -259,9 +260,11 @@
 
 (defn- host-route [{:keys [request-method uri] :as req}]
   (if-let [{:keys [title f]} (get @host-routes [request-method uri])]
-    (let [params (decorate/request-params (query-params req))
-          out (binding [decorate/*params* params] (f (assoc req :params params)))]
-      (if (and (map? out) (:status out)) out (html-response (host-page title out))))
+    (if (and (not= :get request-method) (not= token (get-in req [:headers "x-sdiff-token"])))
+      (json-response 403 {:error "missing or wrong token; reload the page"})
+      (let [params (decorate/request-params (query-params req))
+            out (binding [decorate/*params* params] (f (assoc req :params params)))]
+        (if (and (map? out) (:status out)) out (html-response (host-page title out)))))
     {:status 404 :body "not found"}))
 
 (defn handler [{:keys [request-method uri] :as req}]
