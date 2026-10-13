@@ -44,3 +44,10 @@
     (is (empty? (view/validate {:report rep} v2)))
     (is (= "no change at \"nope\" in defn compile!" (:problem (first (view/validate {:report rep} {:sections [{:items [[:change path "defn compile!" "nope"]]}]})))))
     (is (str/starts-with? (:problem (first (view/validate {:report rep} {:sections [{:items [[:rename "x" "y"]]}]}))) "no rename"))))
+
+(deftest a-view-made-under-other-params-is-labelled
+  (let [render (fn [ps stamped] (binding [d/*ctx* {:report report :annotations []} d/*params* ps]
+                                  (str (hiccup2.core/html (view/render report (assoc v :params stamped))))))]
+    (is (str/includes? (render {"against" "main"} {"against" "dev"}) "made with against=dev"))
+    (is (not (str/includes? (render {"against" "main"} {"against" "main"}) "made with")))
+    (is (str/includes? (render {"against" "main"} {"against" "dev"}) "The extraction") "the view still renders")))

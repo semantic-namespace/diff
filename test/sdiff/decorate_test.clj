@@ -41,3 +41,36 @@
          (d/hiccup->text (d/derived "tool" [:p "declares " [:code.ent ":fn/x"] " · " [:span.tag "changed"]]
                                     [:ul.ids [:li "a → b"] [:li "c"]]
                                     [:table.contract [:tbody [:tr [:td "key"] [:td "v"]]]])))))
+
+(defn- with-declared [f]
+  (let [before @d/params]
+    (reset! d/params #{"against"})
+    (try (f) (finally (reset! d/params before)))))
+
+(deftest request-params-keeps-declared-non-empty-params
+  (with-declared
+    #(do (is (= {"against" "main"} (d/request-params {"against" "main" "other" "x"})))
+         (is (= {} (d/request-params {"against" ""})))
+         (is (= {} (d/request-params {}))))))
+
+(deftest with-params-appends-declared-params-to-a-url
+  (with-declared
+    (fn []
+      (is (= "/pr?ref=a" (d/with-params "/pr?ref=a")) "nothing bound, nothing added")
+      (binding [d/*params* {"against" "deployed/dev"}]
+        (is (= "/pr?ref=a&against=deployed%2Fdev" (d/with-params "/pr?ref=a")))
+        (is (= "/pr?x=1" (d/with-params "/pr?x=1" {"other" "y"})) "undeclared params are dropped")
+        (is (= "/x?against=a+b" (d/with-params "/x" {"against" "a b"})) "starts a query string when there is none")))))
+
+(deftest stamped-items-are-labelled-when-their-params-differ
+  (binding [d/*params* {"against" "main"}]
+    (is (= {:text "x" :params {"against" "main"}} (d/stamp {:text "x"})))
+    (is (nil? (d/params-note {"against" "main"})))
+    (is (= "made with against=dev" (d/params-note {"against" "dev"})))
+    (is (= "made without parameters" (d/params-note nil)))
+    (let [h (str (hiccup2.core/html (d/render-annotation {:text "t" :author "a" :params {"against" "dev"}})))]
+      (is (str/includes? h "made with against=dev"))
+      (is (str/includes? h "t") "the annotation is not hidden")))
+  (binding [d/*params* {}]
+    (is (nil? (d/params-note nil)))
+    (is (not (str/includes? (str (hiccup2.core/html (d/render-annotation {:text "t" :params {}}))) "made")))))
