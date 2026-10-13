@@ -51,3 +51,23 @@
     (is (str/includes? (render {"against" "main"} {"against" "dev"}) "made with against=dev"))
     (is (not (str/includes? (render {"against" "main"} {"against" "main"}) "made with")))
     (is (str/includes? (render {"against" "main"} {"against" "dev"}) "The extraction") "the view still renders")))
+
+(defn- header-count [prs body]
+  (d/add-header-decorator! ::marker (fn [_ _] [:p "registry-context-marker"]))
+  (try
+    (let [html (binding [d/*ctx* {:report report :annotations []}]
+                 (if body
+                   (html/page nil "t" prs :body (body))
+                   (html/page nil "t" prs)))]
+      (count (re-seq #"registry-context-marker" html)))
+    (finally (swap! d/header-decorators #(remove (fn [[k]] (= ::marker k)) %)))))
+
+(deftest the-header-renders-once-whatever-the-ordering
+  (let [grouping {:title "risk" :compact true :derived "test"
+                  :sections [{:title "Top" :items [[:form path "defn compile!"]]}]}
+        with-header-item {:title "v" :sections [{:title "ctx" :items [[:header]]}
+                                                {:title "x" :items [[:form path "defn compile!"]]}]}]
+    (is (= 1 (header-count [report] nil)) "default report")
+    (is (= 1 (header-count [report] #(binding [d/*ctx* {:report report :annotations []}] (view/render report grouping)))) "a built-in grouping")
+    (is (= 1 (header-count [report] #(binding [d/*ctx* {:report report :annotations []}] (view/render report (dissoc grouping :compact))))) "a grouping rendered as a full view")
+    (is (= 1 (header-count [report] #(binding [d/*ctx* {:report report :annotations []}] (view/render report with-header-item)))) "a view with a :header item")))

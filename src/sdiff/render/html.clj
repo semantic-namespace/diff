@@ -476,7 +476,7 @@
          (if (and shell (= 1 (count prs)))
            (binding [*shell* true]
              (let [{:keys [num title status head author] :as r} (first prs)
-                   content (or body (pr-view gh-url r))
+                   content (if body (list (decorate/header r) body) (pr-view gh-url r))
                    used (when names (names/used names (apply str (names/hiccup-strings content))))]
                [:body.shell-page
                 [:header.top
@@ -500,7 +500,8 @@
             [:p (str (count prs) " pull request" (when (not= 1 (count prs)) "s") " from ") [:code repo-name]
              ", read structurally. Each file is sorted into one of four verdicts; only files that change behaviour are expanded. Inside those, every change is named by its place in the code — the binding, clause or step it lives in — rather than by line."]]
            (let [content (list before
-                               (or body
+                               (if body
+                                   (list (mapcat decorate/header prs) body)
                                    (list [:nav.toc (for [{:keys [num title]} prs] [:a {:href (str "#pr-" num)} (str "#" num " " title)])]
                                          (map (partial pr-view gh-url) prs))))
                  used (when names (names/used names (apply str (names/hiccup-strings content))))]
