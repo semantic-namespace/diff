@@ -13,6 +13,24 @@
 
 (def ^:dynamic *ctx* nil)
 
+(defonce params (atom #{}))
+
+(defn add-param!
+  "Declares a request parameter the host reads. The page, the text format and
+  the MCP tools pass it through untouched; sdiff never interprets it."
+  [k]
+  (swap! params conj (name k)))
+
+(def ^:dynamic *params*
+  "The declared parameters present in the current request, as a map of string
+  to string. Bound while the context is built and while decorators run."
+  {})
+
+(defn request-params
+  "The declared parameters among `query`, a map of string to string."
+  [query]
+  (into {} (filter (fn [[k v]] (and (@params k) (seq v)))) query))
+
 (defonce form-decorators (atom []))
 (defonce header-decorators (atom []))
 (defonce ref-validators (atom []))
