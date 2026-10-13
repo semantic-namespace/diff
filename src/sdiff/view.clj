@@ -46,7 +46,7 @@
                 [:div.view-item [:div.where [:code a] " · " [:code c]]
                  (html/form-view f (assoc fm :changes [ch] :extraction nil))]
                 (decorate/problem "no change at " (pr-str c) " in " (pr-str b) " of " a)))
-    :header [:div.view-item (decorate/header report)]
+    :header nil
     :rename (if-let [r (some #(when (and (= a (:from %)) (= b (:to %))) %) (:renames report))]
               [:div.view-item [:ul.renames [:li "rename " [:code a] " → " [:code b] [:span.n (str (:count r) " sites across the PR")]]]]
               (decorate/problem "no rename " a " → " b " in this PR"))
