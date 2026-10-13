@@ -193,6 +193,17 @@ reviewer or a model attached to a form, an entity or the page, with its author
 and the derived facts it rests on. `POST /annotate` stores them, the `annotate`
 MCP tool posts them for you, and a panel setting hides the inferred layer.
 
+## Host pages
+
+A host that serves the review UI can add pages of its own with
+`sdiff.serve/add-route!` (`method`, `path`, `title`, `f`) before calling
+`sdiff.serve/start!`. `f` takes the ring request, with `:params` holding the
+declared request parameters (also bound as `sdiff.decorate/*params*`), and
+returns either a ring response, a map with `:status`, which is passed through,
+or hiccup, which sdiff renders under `title` with the stylesheets of the other
+pages. A GET route is listed on the index page. Built-in paths cannot be
+registered; unknown paths are 404 and an exception in `f` is a 500.
+
 ## MCP server
 
 The same operations as MCP tools (`structural-diff`, `review-draft`,
