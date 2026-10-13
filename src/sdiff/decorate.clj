@@ -13,6 +13,52 @@
 
 (def ^:dynamic *ctx* nil)
 
+(defonce params (atom #{}))
+
+(defn add-param!
+  "Declares a request parameter the host reads. The page, the text format and
+  the MCP tools pass it through untouched; sdiff never interprets it."
+  [k]
+  (swap! params conj (name k)))
+
+(def ^:dynamic *params*
+  "The declared parameters present in the current request, as a map of string
+  to string. Bound while the context is built and while decorators run."
+  {})
+
+(defn request-params
+  "The declared parameters among `query`, a map of string to string."
+  [query]
+  (into {} (filter (fn [[k v]] (and (@params k) (seq v)))) query))
+
+(defn- enc [s] (java.net.URLEncoder/encode (str s) "UTF-8"))
+
+(defn with-params
+  "`url` with the declared parameters of `ps` (default: the current request's)
+  appended to its query string."
+  ([url] (with-params url *params*))
+  ([url ps]
+   (let [ps (request-params ps)]
+     (if (empty? ps)
+       url
+       (str url (if (str/includes? url "?") "&" "?")
+            (str/join "&" (for [[k v] (sort ps)] (str (enc k) "=" (enc v)))))))))
+
+(defn stamp
+  "`m` marked with the parameters it was made under."
+  [m]
+  (assoc m :params *params*))
+
+(defn params-note
+  "A short note when `stamped` (an item's parameters) differ from the current
+  request's, else nil."
+  [stamped]
+  (let [stamped (or stamped {})]
+    (when (not= stamped *params*)
+      (if (empty? stamped)
+        "made without parameters"
+        (str "made with " (str/join ", " (for [[k v] (sort stamped)] (str k "=" v))))))))
+
 (defonce form-decorators (atom []))
 (defonce header-decorators (atom []))
 (defonce ref-validators (atom []))
@@ -66,9 +112,10 @@
 
 (defn annotations-on [ctx on] (filter #(on= on (:on %)) (:annotations ctx)))
 
-(defn render-annotation [{:keys [author text basis kind]}]
+(defn render-annotation [{:keys [author text basis kind params]}]
   [:div.deco.inferred
    [:span.prov (or kind "inferred") " · " (or author "unknown")]
+   (when-let [n (params-note params)] [:span.prov.params-note " · " n])
    [:p (code-spans text)]
    (when (seq basis) [:p.basis "based on " (interpose ", " (for [b basis] [:code (str b)]))])])
 

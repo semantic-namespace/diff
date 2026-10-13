@@ -1,5 +1,5 @@
 (ns sdiff.mcp
-  "MCP server over stdio (JVM; plumcp does not run on babashka). Three tools:
+  "MCP server over stdio (JVM; plumcp does not run on babashka). Tools:
 
     structural-diff  the report for a pull request or a local git range
     review-draft     notes on form paths -> the GitHub review payload, nothing sent
@@ -51,6 +51,16 @@
       (clojure.edn/read-string (slurp f))
       (throw (ex-info "no review server is running: start `bb sdiff serve` or the atlas review server" {})))))
 
+(defn- params-map
+  "The query-string `s` as a map of string to string."
+  [s]
+  (into {} (for [kv (str/split (str/replace (str s) #"^\?" "") #"&") :when (seq kv)
+                 :let [[k v] (str/split kv #"=" 2)]]
+             [(java.net.URLDecoder/decode k "UTF-8") (java.net.URLDecoder/decode (or v "") "UTF-8")])))
+
+(defn- param-suffix [s]
+  (apply str (for [[k v] (params-map s)] (str "&" (java.net.URLEncoder/encode k "UTF-8") "=" (java.net.URLEncoder/encode v "UTF-8")))))
+
 (defn ^{:mcp-type :tool
         :mcp-annotations (eg/make-tool-annotations :title "Structural diff" :read-only-hint? true :open-world-hint? true)}
   structural-diff
@@ -61,15 +71,18 @@
   (full: every form's old and new source with line ranges). Each file has a
   verdict; inside semantic files each change is `<form> › <path>`, the names
   review notes refer to. With a review server running, a PR's report comes
-  from it and carries the derived decorations and annotations the page shows."
+  from it and carries the derived decorations and annotations the page shows.
+  `params` is query-string form (against=deployed%2Fdev); only the parameters
+  the host declared are read."
   [{:keys [^{:doc "Pull request: owner/repo#N or https://github.com/owner/repo/pull/N" :type "string" :required? false} pr
            ^{:doc "Local git repository path (instead of pr)" :type "string" :required? false} repo
            ^{:doc "Base ref, with repo" :type "string" :required? false} base
            ^{:doc "Head ref, with repo" :type "string" :required? false} head
-           ^{:doc "text or edn" :type "string" :required? false :default "text"} format]}]
+           ^{:doc "text or edn" :type "string" :required? false :default "text"} format
+           ^{:doc "Host parameters in query-string form, e.g. against=deployed%2Fdev; passed through to the review server, which reads the ones its host declares" :type "string" :required? false} params]}]
   (let [server (try (ui-server) (catch Exception _ nil))]
     (if (and pr server (not= "edn" format))
-      (let [{:keys [status body]} (http/get (str (:url server) "pr?ref=" (java.net.URLEncoder/encode pr "UTF-8") "&format=text") {:throw false :timeout 300000})]
+      (let [{:keys [status body]} (http/get (str (:url server) "pr?ref=" (java.net.URLEncoder/encode pr "UTF-8") "&format=text" (param-suffix params)) {:throw false :timeout 300000})]
         (when (not= 200 status) (throw (ex-info (str "review server: " status " " body) {})))
         (text-result body))
       (let [r (cond pr (pr-report pr)
@@ -120,12 +133,13 @@
   The page shows them labelled inferred, apart from the derived decorations.
   Returns the page URL and every annotation whose target does not resolve."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
-           ^{:doc "JSON array of annotations" :type "array"} annotations]}]
+           ^{:doc "JSON array of annotations" :type "array"} annotations
+           ^{:doc "Host parameters in query-string form, e.g. against=deployed%2Fdev; passed through to the review server, which reads the ones its host declares" :type "string" :required? false} params]}]
   (let [{:keys [url token]} (ui-server)
         anns (mapv #(merge {:author "claude" :kind "inferred"} (update-keys % keyword)) annotations)
         {:keys [status body]} (http/post (str url "annotate")
                                          {:headers {"content-type" "application/json" "x-sdiff-token" token}
-                                          :body (json/generate-string {:pr pr :annotations anns})
+                                          :body (json/generate-string {:pr pr :annotations anns :params (params-map params)})
                                           :throw false})
         res (json/parse-string body true)]
     (when (not= 200 status) (throw (ex-info (str "review server: " (or (:error res) status)) {})))
@@ -148,14 +162,16 @@
   Items name what the decorated report already shows: a form, one change inside
   it by its printed path, an entity, a file, the registry header, a rename
   roll-up. A folded section is present but closed. Returns the view's URL and
-  every item that does not resolve. A PR can hold several named views."
+  every item that does not resolve. A PR can hold several named views. `params`
+  stamps the view with the parameters it was made under."
   [{:keys [^{:doc "Pull request: owner/repo#N or URL" :type "string"} pr
            ^{:doc "View name, used in the URL (e.g. safe-to-merge)" :type "string"} name
-           ^{:doc "The view, as EDN" :type "string"} view]}]
+           ^{:doc "The view, as EDN" :type "string"} view
+           ^{:doc "Host parameters in query-string form, e.g. against=deployed%2Fdev; passed through to the review server, which reads the ones its host declares" :type "string" :required? false} params]}]
   (let [{:keys [url token]} (ui-server)
         {:keys [status body]} (http/post (str url "view")
                                          {:headers {"content-type" "application/json" "x-sdiff-token" token}
-                                          :body (json/generate-string {:pr pr :name name :view view})
+                                          :body (json/generate-string {:pr pr :name name :view view :params (params-map params)})
                                           :throw false})
         res (json/parse-string body true)]
     (when (not= 200 status) (throw (ex-info (str "review server: " (or (:error res) status)) {})))

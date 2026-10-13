@@ -102,7 +102,7 @@
       [:h1 (:title view)]
       (if (:derived view)
         [:p.prov "derived · " (:derived view) " · the full report, regrouped"]
-        [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report" (when (:question view) (list " · answers: " [:em (:question view)]))])
+        [:p.prov "inferred · " (or (:author view) "unknown") " · a view over the full report" (when-let [n (decorate/params-note (:params view))] (str " · " n)) (when (:question view) (list " · answers: " [:em (:question view)]))])
       (when (:intro view) [:p.intro (decorate/code-spans (:intro view))])]
      [:div.fold-all
       [:button {:type "button" :onclick "document.querySelectorAll('details.view-section').forEach(d=>d.open=true)"} "expand all"]

@@ -178,7 +178,15 @@ Everything on the page is one of two kinds, and labelled. **Derived** content
 comes from a tool named on the label: the structural changes from sdiff, and
 whatever decorations a host registers beside each changed form or at the top
 of the page (`sdiff.decorate/add-form-decorator!`, `add-header-decorator!`,
-`use-context!`). The atlas `review` module registers decorations from a
+`use-context!`). A host that varies its derived facts by request declares the
+parameter with `sdiff.decorate/add-param!`; sdiff never interprets it. The
+declared parameters present in the request (`?against=main`, or `params` in a
+POST body) are bound as `sdiff.decorate/*params*`, a map of string to string,
+while the context builder and the decorators run, and are kept in every link
+sdiff builds. Annotations and views are stamped with the parameters they were
+made under, and the page labels those made under other ones ("made with
+against=main") without hiding them. Viewed marks, notes, verdict and summary
+stay shared. The atlas `review` module registers decorations from a
 registry: the entity a form declares with its contract delta, who depends on
 it, which data keys it mentions. **Inferred** content is an annotation a
 reviewer or a model attached to a form, an entity or the page, with its author
@@ -188,9 +196,15 @@ MCP tool posts them for you, and a panel setting hides the inferred layer.
 ## MCP server
 
 The same operations as MCP tools (`structural-diff`, `review-draft`,
-`post-review`, `annotate`), over stdio, on the JVM (plumcp does
+`post-review`, `annotate`, `view`), over stdio, on the JVM (plumcp does
 not run on babashka). `post-review` is annotated as a destructive write, so clients ask before calling it.
 It acts with the `gh` credentials of whoever runs it.
+
+`structural-diff`, `annotate` and `view` take an optional `params` argument in
+query-string form (`against=deployed%2Fdev`), passed to the review server,
+which reads the parameters its host declared. It is separate from `base`,
+which is the git merge base for a local range. `view` composes a named view of
+a PR's page from EDN and returns its URL.
 
 ```
 claude mcp add sdiff -- bash -c 'cd /path/to/diff && exec clojure -M:mcp'
