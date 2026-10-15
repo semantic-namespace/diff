@@ -511,11 +511,20 @@
      :moved order
      :forms (vec res)}))
 
+(defn- name-token?
+  "A symbol or a keyword: something a rename can rename. A literal such as
+  `true`, `nil`, a number or a string changes value when it is replaced."
+  [node]
+  (and (= :token (n/tag node))
+       (let [v (try (n/sexpr node) (catch Exception _ ::unreadable))]
+         (or (and (symbol? v) (not (#{"true" "false" "nil"} (n/string node)))) (keyword? v)))))
+
 (defn tok
   "The `[old new]` token pair of a token-to-token replacement, or nil. A `_`
-  parameter coming into use is not a rename."
+  parameter coming into use is not a rename, and neither is a literal replaced
+  by something else."
   [{:keys [op old new]}]
-  (when (and (= op :replaced) old new (= :token (n/tag old)) (= :token (n/tag new))
+  (when (and (= op :replaced) old new (name-token? old) (name-token? new)
              (not (str/starts-with? (n/string old) "_")))
     [(n/string old) (n/string new)]))
 

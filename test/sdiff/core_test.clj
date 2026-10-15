@@ -200,3 +200,10 @@
     (is (= [[:replaced "body › clause (= :post (:m d)) › = 1 › :post"]]
            (ops base (str/replace base ":post" ":put")))
         "an edited test stays the same clause")))
+
+(deftest a-literal-replaced-is-not-a-rename
+  (let [a {:path "a.clj" :old "(ns a)\n(defn f [] (g true))\n" :new "(ns a)\n(defn f [] (g p/SCAN))\n"}
+        b {:path "b.clj" :old "(ns b)\n(defn h [] (g true))\n" :new "(ns b)\n(defn h [] (g p/SCAN))\n"}
+        {:keys [files renames]} (c/rollup-renames (mapv #(c/file-report (:path %) (:old %) (:new %)) [a b]))]
+    (is (empty? renames) "true → p/SCAN at two sites is a value change")
+    (is (every? #(= :semantic (:verdict %)) files))))
