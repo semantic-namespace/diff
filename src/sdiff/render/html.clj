@@ -216,12 +216,19 @@
             items (tag-runs (elide (vec (range (count ls))) (constantly false) 0))]
         [:div.panes.single (pane label (sha k) items ls)]))))
 
+(defn- placed
+  "`node`, or the children of a node the diff put together, such as a `cond`
+  clause, which has no place of its own in the source."
+  [node]
+  (if (:row (meta node)) [node] (mapcat placed (n/children node))))
+
 (defn- marks-for [side changes]
   (concat
    (for [{:keys [op old new rename extracted]} changes
          :let [node (if (= side :old) old new)]
-         :when (and node (#{:replaced :added :removed :reshaped} op))]
-     [node (cond rename "ren" extracted "ext" (= side :old) "del" :else "add")])
+         :when (and node (#{:replaced :added :removed :reshaped} op))
+         part (placed node)]
+     [part (cond rename "ren" extracted "ext" (= side :old) "del" :else "add")])
    (for [{:keys [kept]} changes [o nw] kept]
      [(if (= side :old) o nw) "kept"])))
 

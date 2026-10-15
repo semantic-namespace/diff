@@ -190,3 +190,13 @@
     (is (= 1 (count (:changes f))))
     (is (= :replaced (:op chg)))
     (is (= ["key" ":from"] (last (:path chg))) "the change is named by its place inside the element")))
+
+(deftest a-cond-clause-pairs-by-its-test
+  (let [ops (fn [old new] (mapv (juxt :op (comp c/fmt-path :path)) (:changes (first (:forms (c/file-report "a.clj" old new))))))
+        base "(ns a)\n(defn f [d]\n  (cond\n    (= :get (:m d)) (get-it d)\n    (= :post (:m d)) (let [p (props d)] (post-it p))\n    :else (nope d)))\n"]
+    (is (= [[:added "body › clause (forbidden? d)"]]
+           (ops base (str/replace base "(cond\n" "(cond\n    (forbidden? d) {:status 403}\n")))
+        "an inserted clause is one addition, and the clauses after it stay paired")
+    (is (= [[:replaced "body › clause (= :post (:m d)) › = 1 › :post"]]
+           (ops base (str/replace base ":post" ":put")))
+        "an edited test stays the same clause")))

@@ -92,8 +92,10 @@
            (rest ks))
 
       (= hd "cond")
-      (map-indexed (fn [i [t e]] [[(str "clause " (inc i))] (n/list-node [t e])])
-                   (partition 2 (rest ks)))
+      (let [clauses (partition 2 (rest ks))
+            tests (map (fn [[t]] (short (n/string t))) clauses)]
+        (map (fn [[t e] test nth-same] [(cond-> ["clause" test] (pos? nth-same) (conj (inc nth-same))) (n/list-node [t e])])
+             clauses tests (map-indexed (fn [i x] (count (filter #{x} (take i tests)))) tests)))
 
       (= hd "case")
       (concat [[["expr"] (second ks)]]
@@ -302,6 +304,16 @@
         [[best-id synth]])
       ids)))
 
+(defn- pair-leftovers
+  "Keyed children whose key is on one side only, paired in order with those of
+  the other side: a `cond` clause whose test was edited stays one clause, while
+  an inserted clause, having no counterpart, is an addition."
+  [ida idb]
+  (let [ka (set (map first ida)) kb (set (map first idb))
+        lone-a (remove (comp kb first) ida) lone-b (remove (comp ka first) idb)
+        renamed (zipmap (map first lone-b) (map first lone-a))]
+    [ida (map (fn [[k v]] [(get renamed k k) v]) idb)]))
+
 (defn diff
   "Changes between nodes `a` and `b` under `path`. Argument vectors pair by
   position so a renamed parameter is one change, not a removal plus an addition;
@@ -324,6 +336,7 @@
       (let [ida (if (defn-forms (head a)) (arity-ids a b) (children-ids a))
             idb (if (defn-forms (head b)) (arity-ids b a) (children-ids b))
             dstr (fn [x] (let [[_ _ s] (kids x)] (when (and s (or (= :multi-line (n/tag s)) (str/starts-with? (n/string s) "\""))) s)))
+            [ida idb] (if (= "cond" (head a)) (pair-leftovers ida idb) [ida idb])
             res (align path ida idb)
             res (if (and (defn-forms (head a)) (not= (some-> (dstr a) n/string) (some-> (dstr b) n/string)))
                   (cons {:op :comments :path (conj path ["docstring"])} res) res)]
