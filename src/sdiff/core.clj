@@ -115,7 +115,7 @@
                     (map-indexed (fn [j b] [[(if (= 1 (count body)) "body" (str "body " (inc j)))] b]) body)))))
 
       (= :map (n/tag node))
-      (map (fn [[k v]] [["key" (n/string k)] v]) (partition 2 ks))
+      (map (fn [[k v]] [(with-meta ["key" (n/string k)] {:key k}) v]) (partition 2 ks))
 
       (#{:vector :set} (n/tag node))
       ::lcs
@@ -147,8 +147,8 @@
                                 leaf (or a b)
                                 step (if (and (str/starts-with? (str (first id)) "arg ") (empty? (kids leaf))) [(short (n/string leaf))] id)]
                             (cond (and a b) (diff (conj path step) a b)
-                                  a         [{:op :removed :path (conj path step) :old a}]
-                                  :else     [{:op :added   :path (conj path step) :new b}])))
+                                  a         [(cond-> {:op :removed :path (conj path step) :old a} (:key (meta id)) (assoc :key (:key (meta id))))]
+                                  :else     [(cond-> {:op :added   :path (conj path step) :new b} (:key (meta id)) (assoc :key (:key (meta id))))])))
                         (distinct (concat (map first ida) (map first idb)))))))
 
 (defn pattern-syms

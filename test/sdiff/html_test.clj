@@ -91,3 +91,9 @@
     (is (re-find #"class=\"ln ln-add\"><span class=\"gut\">2</span><span class=\"cd\">c<" h) "added lines carry their head line number")
     (is (str/includes? h "not shown: encrypted") "an encrypted file shows no patch")
     (is (str/includes? h "GitHub sent no patch"))))
+
+(deftest a-map-entry-added-or-removed-carries-its-key
+  (let [h (page-of "(ns a)\n(defn f [s] (t s {:a/flag? true}))\n" "(ns a)\n(defn f [s] (t s {::p/purpose p/SCAN}))\n")]
+    (is (str/includes? h "drops :a/flag? true, adds ::p/purpose p/SCAN"))
+    (is (re-find #"<mark class=\"del\">(<[^>]+>)*:a/flag\?" h) "the removed key is marked, not only its value")
+    (is (re-find #"<mark class=\"add\">(<[^>]+>)*::p/purpose" h))))

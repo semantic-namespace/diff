@@ -224,10 +224,10 @@
 
 (defn- marks-for [side changes]
   (concat
-   (for [{:keys [op old new rename extracted]} changes
+   (for [{:keys [op old new rename extracted key]} changes
          :let [node (if (= side :old) old new)]
          :when (and node (#{:replaced :added :removed :reshaped} op))
-         part (placed node)]
+         part (cond-> (placed node) key (conj key))]
      [part (cond rename "ren" extracted "ext" (= side :old) "del" :else "add")])
    (for [{:keys [kept]} changes [o nw] kept]
      [(if (= side :old) o nw) "kept"])))
@@ -281,10 +281,10 @@
                                     :else h)))
     :removed-form "removed"
     (let [step (fn [path] (let [s (last path)] (if (vector? s) (str/join " " (map str s)) (str s))))
-          phrase (fn [{:keys [op path old new rename] :as c}]
+          phrase (fn [{:keys [op path old new rename key] :as c}]
                    (case op
-                     :added (str "adds " (brief new))
-                     :removed (str "drops " (brief old))
+                     :added (str "adds " (when key (str (brief key) " ")) (brief new))
+                     :removed (str "drops " (when key (str (brief key) " ")) (brief old))
                      :replaced (if rename (str "renames " (first rename) " → " (second rename)) (str "changes " (if (seq path) (step path) "a value")))
                      :reshaped (str "restructures " (or (head old) (name (n/tag old))) " → " (or (head new) (name (n/tag new))))
                      :comments "comments or docstring only"
