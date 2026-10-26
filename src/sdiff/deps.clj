@@ -43,9 +43,13 @@
 (defonce ^:private bridges (atom []))
 
 (defn add-bridge!
-  "`(fn [{:keys [analysis form-at]}] [[from-node to-node] ...])`, edges a tool
-  knows that a call graph cannot see, such as a keyword that names a function
-  registered elsewhere. Nodes are `[file row]` as `form-at` returns them."
+  "`(fn [{:keys [analysis form-at root repo sha]}] [[from-node to-node] ...])`,
+  edges a tool knows that a call graph cannot see, such as a keyword that names
+  a function registered elsewhere. Nodes are `[file row]` as `form-at` returns
+  them. `root` is the directory analysed, its files named in `analysis` by
+  their canonical path; `repo` and `sha` name the commit it holds, when the
+  graph is a pull request's, so a bridge can read what the analysed sources
+  leave out."
   [k f]
   (swap! bridges (fn [bs] (conj (vec (remove #(= k (first %)) bs)) [k f]))))
 
@@ -127,7 +131,8 @@
                       {} usages)
         calls (reduce (fn [m [from to]] (if (not= from to) (add m from to) m))
                       calls
-                      (for [[_ f] @bridges e (f {:analysis a :form-at form-at})] e))
+                      (for [[_ f] @bridges e (f {:analysis a :form-at form-at :root root
+                                                 :repo (:repo config) :sha (:sha config)})] e))
         may (reduce (fn [m [from to name]] (let [is (impls [(symbol to) name])] (if (> (count is) 1) (reduce #(add %1 from %2) m is) m)))
                     {} usages)
         ext (as-> {} m
@@ -224,7 +229,7 @@
     (or (@snapshots k)
         (let [g (if (.exists f)
                   (do (.setLastModified f (System/currentTimeMillis)) (edn/read-string (slurp f)))
-                  (let [g (graph (source-dir repo sha) config)] (io/make-parents f) (spit f (pr-str g)) (future (sweep!)) g))]
+                  (let [g (graph (source-dir repo sha) (assoc config :repo repo :sha sha))] (io/make-parents f) (spit f (pr-str g)) (future (sweep!)) g))]
           (swap! snapshots assoc k g)
           g))))
 
