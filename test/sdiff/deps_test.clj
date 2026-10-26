@@ -74,3 +74,11 @@
     (is (.exists (io/file root "src/o--r" (sha "b"))) "used yesterday")
     (is (not (.exists (io/file root "src/o--r" (sha "c")))) "a download that never completed")
     (is (= #{(str "o--r-" (sha "b") "-2.edn")} (set (map #(.getName %) (.listFiles (io/file root "deps"))))) "the newest snapshot of a commit in use")))
+
+(deftest a-bridge-is-told-what-it-reads
+  (let [seen (atom nil)
+        root (project)]
+    (deps/add-bridge! ::probe (fn [ctx] (reset! seen (dissoc ctx :analysis :form-at)) []))
+    (try (deps/graph root (assoc deps/defaults :repo "o/r" :sha "abc"))
+         (finally (swap! @#'deps/bridges (fn [bs] (vec (remove #(= ::probe (first %)) bs))))))
+    (is (= {:root (.getCanonicalPath (io/file root)) :repo "o/r" :sha "abc"} @seen))))
