@@ -207,3 +207,21 @@
         {:keys [files renames]} (c/rollup-renames (mapv #(c/file-report (:path %) (:old %) (:new %)) [a b]))]
     (is (empty? renames) "true → p/SCAN at two sites is a value change")
     (is (every? #(= :semantic (:verdict %)) files))))
+
+(deftest a-repeated-definition-removed-is-reported
+  (let [first-def "(s/def ::limit (and int? #(> 200 %)))\n"
+        last-def "(s/def ::limit (s/nilable pos-int?))\n"
+        summary (fn [old new]
+                  (let [r (c/file-report "a.clj" old new)]
+                    [(:verdict r) (mapv (juxt :id (comp (partial mapv :op) :changes)) (:forms r))]))]
+    (is (= [:semantic [[["s/def" "::limit" "(1 of 2)"] [:removed-form]]]]
+           (summary (str "(ns a)\n" first-def last-def) (str "(ns a)\n" last-def)))
+        "the earlier definition, the one the later shadowed, is the one removed")
+    (is (= [:semantic [[["s/def" "::limit" "(2 of 2)"] [:removed-form]]]]
+           (summary (str "(ns a)\n" first-def last-def) (str "(ns a)\n" first-def)))
+        "removing the later definition, the one in effect, is reported as that one removed")
+    (is (= [:semantic [[["s/def" "::limit" "(1 of 2)"] [:replaced]]]]
+           (summary (str "(ns a)\n" first-def last-def) (str "(ns a)\n(s/def ::limit (and int? #(> 100 %)))\n" last-def)))
+        "an edit to one repeat is a change to that repeat")
+    (is (= [:whitespace-only []]
+           (summary (str "(ns a)\n" first-def last-def) (str "(ns a)\n" first-def "\n" last-def))))))

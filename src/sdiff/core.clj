@@ -356,7 +356,41 @@
 (defn clj? "Is this path Clojure source or EDN?" [p] (boolean (re-find #"\.(clj|cljs|cljc|edn|bb)$" p)))
 
 (defn forms [src] (remove skip? (n/children (p/parse-string-all src))))
-(defn index [src] (into {} (map (juxt top-id identity) (forms src))))
+(defn keyed
+  "`[id form]` for each top-level form, in order. Each definition of a name
+  defined more than once is told apart by its place, `(1 of 2)`, so no
+  definition hides another."
+  [src]
+  (let [fs (forms src)
+        total (frequencies (map top-id fs))]
+    (first (reduce (fn [[acc seen] f]
+                     (let [id (top-id f) k (inc (seen id 0)) m (total id)]
+                       [(conj acc [(if (= m 1) id (conj id (str "(" k " of " m ")"))) f]) (assoc seen id k)]))
+                   [[] {}] fs))))
+
+(defn index [src] (into {} (keyed src)))
+
+(defn- base-id [id] (if (and (>= (count id) 3) (re-matches #"\(\d+ of \d+\)" (str (peek id)))) (pop id) id))
+
+(defn- align-repeats
+  "`{new-id old-id}` for the forms of a name defined more than once on either
+  side: identical definitions pair first, the rest pair from the last one back,
+  since the last is the one in effect."
+  [ka kb]
+  (let [groups (fn [kv] (group-by (comp base-id first) kv))
+        ga (groups ka) gb (groups kb)]
+    (into {} (for [bid (distinct (concat (keys ga) (keys gb)))
+                   :let [olds (ga bid) news (gb bid)]
+                   :when (or (> (count olds) 1) (> (count news) 1))
+                   pair (let [same (reduce (fn [[acc used] [nk nf]]
+                                             (if-let [[ok] (first (filter (fn [[ok of]] (and (not (used ok)) (= (n/string of) (n/string nf)))) olds))]
+                                               [(assoc acc nk ok) (conj used ok)] [acc used]))
+                                           [{} #{}] news)
+                              [same used] same
+                              rest-old (reverse (remove (comp used first) olds))
+                              rest-new (reverse (remove (comp same first) news))]
+                          (concat same (map (fn [[nk] [ok]] [nk ok]) rest-new rest-old)))]
+               pair))))
 
 (defn arity-body [defn-node nargs]
   (let [bodies (filter #(= :list (n/tag %)) (kids defn-node))
@@ -452,18 +486,27 @@
   `:moved` lists forms whose position among the others changed; in Clojure a
   definition must precede its callers, so a move is a semantic change."
   [path old new]
-  (let [ia (index old) ib (index new)
+  (let [ka (keyed old) kb (keyed new)
+        ia (into {} ka) ib (into {} kb)
         ids (distinct (concat (keys ia) (keys ib)))
-        was (pair-forms ia ib (filter #(not (ib %)) (keys ia)) (filter #(not (ia %)) (keys ib)))
-        paired-old (set (vals was))
-        added (into {} (for [id ids :when (and (ib id) (not (ia id)) (not (was id)))] [(second id) (ib id)]))
-        base (for [id ids :when (not (paired-old id)) :let [a (ia id) b (ib id)]]
-               (cond (and a b) {:id id :changes (cond-> (vec (diff [] (unwrap a) (unwrap b)))
-                                                  (not= (n/tag a) (n/tag b))
-                                                  (conj {:op :wrapper :path [] :old a :new b}))}
-                     (was id) {:id id :was (was id) :changes (paired-diff (ia (was id)) b)}
-                     a {:id id :changes [{:op :removed-form :old a}]}
-                     :else {:id id :changes [{:op :added-form :new b}]}))
+        rep (align-repeats ka kb)
+        repeated (set (for [kv [ka kb] [b n] (frequencies (map (comp base-id first) kv)) :when (> n 1)] b))
+        rep? (comp repeated base-id)
+        was (pair-forms ia ib (filter #(and (not (ib %)) (not (rep? %))) (keys ia)) (filter #(and (not (ia %)) (not (rep? %))) (keys ib)))
+        partner (fn [k] (if (rep? k) (rep k) (if (ia k) k (was k))))
+        paired-old (set (keep #(when (ib %) (partner %)) ids))
+        added (into {} (for [id ids :when (and (ib id) (not (partner id)))] [(second id) (ib id)]))
+        same-diff (fn [a b] (cond-> (vec (diff [] (unwrap a) (unwrap b)))
+                              (not= (n/tag a) (n/tag b))
+                              (conj {:op :wrapper :path [] :old a :new b})))
+        base (concat
+              (for [id ids :let [b (ib id)] :when b :let [o (partner id) a (some-> o ia)]]
+                (cond (= o id) {:id id :changes (same-diff a b)}
+                      (and a (rep? id)) {:id id :was o :changes (same-diff a b)}
+                      a {:id id :was o :changes (paired-diff a b)}
+                      :else {:id id :changes [{:op :added-form :new b}]}))
+              (for [id ids :let [a (ia id)] :when (and a (not (paired-old id)))]
+                {:id id :changes [{:op :removed-form :old a}]}))
         extractions (for [{:keys [id changes] :as fr} base
                           {:keys [op old new path]} changes
                           :let [fname (when (and (#{:replaced :reshaped} op) new) (first (filter added (tokens new))))
@@ -492,8 +535,8 @@
                     (if-let [e (and (= :added-form (:op (first (:changes r)))) (ext-by-fn (second id)))]
                       (assoc r :extraction e) r)) base)
         order (let [common (set (filter ib (keys ia)))
-                    before (filter common (map top-id (forms old)))
-                    after (filter common (map top-id (forms new)))
+                    before (filter common (map first ka))
+                    after (filter common (map first kb))
                     kept (set (lcs-of (vec before) (vec after)))]
                 (vec (remove kept after)))
         res (remove #(empty? (:changes %)) base)
