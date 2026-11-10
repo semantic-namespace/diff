@@ -8,8 +8,11 @@
   methods records and reify forms implement. A call to a protocol method with
   one implementation is a call to it; with several, a possible call. Functions
   a generator defines at load time, such as HugSQL queries, show up as
-  unresolved symbols and are counted as calls to that library. Other tools add
-  edges a call graph cannot see with `add-bridge!`."
+  unresolved symbols and are counted as calls to that library.
+
+  What a keyword means is not read here: no keyword is a dependency unless a
+  host says so with `add-bridge!`, such as meta-source's review module, which
+  reads it from the repository's own meta-source.edn."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :refer [sh]]
@@ -59,7 +62,9 @@
   "A bridge where a form that names a keyword depends on the form that defines
   it. A form defines a keyword when a call matching `defining` (a regex over the
   called var's qualified name) is followed, as its first keyword, by that
-  keyword: `(s/def ::k ...)`, or a registration such as `(register! :fn/x ...)`."
+  keyword: `(s/def ::k ...)`, or a registration such as `(register! :fn/x ...)`.
+  Nothing installs it: a host that knows which calls define keywords in a
+  repository does."
   [defining]
   (fn [{:keys [analysis form-at]}]
     (let [kws (update-vals (group-by :filename (filter :ns (:keywords analysis))) by-position)
@@ -74,8 +79,6 @@
             :let [from (form-at file (:row e)) to (defines (kw e))]
             :when (and from to (not= from to))]
         [from to]))))
-
-(add-bridge! ::spec (keyword-bridge #"^(clojure|cljs)\.spec\.alpha/def$"))
 
 (defn- top-forms [file]
   (try

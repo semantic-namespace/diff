@@ -31,11 +31,18 @@
         "a protocol with one implementation outside tests is followed")
     (is (= #{#{"app.cycle-a" "app.cycle-b"}} (#'deps/cycles (:ns-deps g) (:project g))))))
 
-(deftest a-spec-keyword-is-a-dependency-on-its-s-def
-  (let [g (deps/graph (project) deps/defaults)
-        sdef (some (fn [[k v]] (when (re-find #"s/def ::purpose" (:name v)) k)) (:forms g))
+(defn- spec-edge? [g]
+  (let [sdef (some (fn [[k v]] (when (re-find #"s/def ::purpose" (:name v)) k)) (:forms g))
         tag (some (fn [[k v]] (when (= "app.use/tag" (:var v)) k)) (:forms g))]
-    (is (contains? (get-in g [:calls tag]) sdef))))
+    (contains? (get-in g [:calls tag]) sdef)))
+
+(deftest a-keyword-is-no-dependency-unless-a-host-says-so
+  (is (not (spec-edge? (deps/graph (project) deps/defaults))) "sdiff reads no meaning into a keyword"))
+
+(deftest a-host-installs-a-keyword-bridge
+  (deps/add-bridge! ::spec (deps/keyword-bridge #"^clojure\.spec\.alpha/def$"))
+  (try (is (spec-edge? (deps/graph (project) deps/defaults)) "a spec keyword depends on its s/def")
+       (finally (swap! @#'deps/bridges (fn [bs] (vec (remove #(= ::spec (first %)) bs)))))))
 
 (deftest a-new-form-only-says-who-calls-it
   (let [parts (#'deps/line-parts {:new? true :callers ["a/b"] :caller-ns 1 :test-callers 0 :callers-before 0 :outside-callers 1

@@ -166,9 +166,15 @@ That is what the risk order uses: a change that now reaches I/O, changes a
 function's arguments, or has callers in ten or more forms of other namespaces
 comes first. The analysis is heuristic: functions passed as values, protocols
 with several implementations and calls by keyword are not followed, unless a
-bridge says how. `sdiff.deps/add-bridge!` adds edges a call graph cannot see;
-`keyword-bridge` covers the common case of a keyword defined in one place and
-used elsewhere, and `clojure.spec` definitions are bridged by default. The
+bridge says how. sdiff reads no meaning into a keyword, not even a
+`clojure.spec` key: what defines a keyword is the repository's to say.
+`sdiff.deps/add-bridge!` adds edges a call graph cannot see, and
+`keyword-bridge` builds one for a keyword defined by a call in one place and
+used elsewhere. meta-source's
+[review module](https://github.com/semantic-namespace/meta-source-packs/tree/main/review)
+is such a host: it adds the keyword dependencies the repository's
+`meta-source.edn` declares (spec keys, re-frame events, integrant refs, atlas
+dev-ids). The
 I/O table, test paths, ignored namespaces and code generators can be set per
 repository in `~/.config/sdiff/deps.edn`, keyed by `owner/repo`.
 
@@ -186,7 +192,8 @@ while the context builder and the decorators run, and are kept in every link
 sdiff builds. Annotations and views are stamped with the parameters they were
 made under, and the page labels those made under other ones ("made with
 against=main") without hiding them. Viewed marks, notes, verdict and summary
-stay shared. The atlas `review` module registers decorations from a
+stay shared. meta-source's review module registers the findings a change
+introduces and fixes. The atlas `review` module registers decorations from a
 registry: the entity a form declares with its contract delta, who depends on
 it, which data keys it mentions. **Inferred** content is an annotation a
 reviewer or a model attached to a form, an entity or the page, with its author
