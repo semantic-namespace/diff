@@ -295,8 +295,12 @@
           ps (distinct (keep phrase changes))]
       (str (str/join ", " (take 2 ps)) (when (> (count ps) 2) (str ", +" (- (count ps) 2) " more"))))))
 
-(defn- common-prefix [ps]
-  (reduce (fn [a b] (vec (map first (take-while (fn [[x y]] (= x y)) (map vector a b))))) ps))
+(defn- common-prefix
+  "The steps every path in ps starts with; [] when ps is empty."
+  [ps]
+  (if (seq ps)
+    (reduce (fn [a b] (vec (map first (take-while (fn [[x y]] (= x y)) (map vector a b))))) ps)
+    []))
 
 (defn data-label
   "What to call a top-level form that is data, not a call, such as the map an

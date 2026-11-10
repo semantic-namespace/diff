@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as str]
             [hiccup2.core :as hc]
+            [rewrite-clj.parser]
             [sdiff.core :as core]
             [sdiff.render.html :as html]))
 
@@ -79,6 +80,11 @@
         h (str (hc/html (html/form-view fr (first (:forms fr)))))]
     (is (str/includes? h "data-label=\":aliases › :test\""))
     (is (not (str/includes? (page-of "(ns a)\n(defn f [x] (a x))\n" "(ns a)\n(defn f [x] (b x))\n") "data-label")) "a call keeps its own name")))
+
+(deftest a-data-form-whose-changes-carry-no-path-is-named-by-its-kind
+  (let [node (first (:children (rewrite-clj.parser/parse-string-all "{:a 1}")))]
+    (is (= "map" (html/data-label node [{:op :added-form :path []}])))
+    (is (= "map" (html/data-label node [])))))
 
 (deftest a-file-that-is-not-clojure-is-a-row-with-its-patch
   (let [h (str (hc/html (html/other-files "https://github.com/o/r/pull/1"
