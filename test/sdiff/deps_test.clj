@@ -89,3 +89,25 @@
     (try (deps/graph root (assoc deps/defaults :repo "o/r" :sha "abc"))
          (finally (swap! @#'deps/bridges (fn [bs] (vec (remove #(= ::probe (first %)) bs))))))
     (is (= {:root (.getCanonicalPath (io/file root)) :repo "o/r" :sha "abc"} @seen))))
+
+(deftest a-repository-states-its-own-instructions
+  (is (nil? (deps/parse-repo-file "")) "no file, or an empty one, says nothing")
+  (is (= {:io {:datomic "^datomic\\."}} (deps/parse-repo-file "{:io {:datomic \"^datomic\\\\.\"}}")))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not :iox" (deps/parse-repo-file "{:iox {}}"))
+      "a key sdiff does not read is an error, not ignored"))
+
+(deftest the-heads-instructions-read-both-sides
+  (let [asked (atom [])]
+    (with-redefs [sdiff.github/blob (fn [repo sha path] (swap! asked conj [repo sha path])
+                                      (if (= sha "head") "{:io {:datomic \"^datomic\\\\.\"} :test-paths \"^spec/\"}" ""))]
+      (reset! @#'deps/repo-files {})
+      (let [c (#'deps/config-for "o/r" "head")]
+        (is (= "^datomic\\." (get-in c [:io :datomic])) "added to the table")
+        (is (= (get-in deps/defaults [:io :postgres]) (get-in c [:io :postgres])) "the rest of the table kept")
+        (is (= "^spec/" (:test-paths c)))
+        (is (= [["o/r" "head" "diff.edn"]] @asked))))))
+
+(deftest a-repository-file-reaches-the-graph
+  (let [g (deps/graph (project) (merge-with merge deps/defaults (deps/parse-repo-file "{:io {:sql \"^next\\\\.jdbc\"}}")))
+        pg (some (fn [[k v]] (when (re-find #"defrecord Pg" (:name v)) k)) (:forms g))]
+    (is (= #{:postgres :sql} (get-in g [:io pg])) "the repository's kind beside the built-in one")))

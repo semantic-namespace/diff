@@ -174,9 +174,23 @@ used elsewhere. meta-source's
 [review module](https://github.com/semantic-namespace/meta-source-packs/tree/main/review)
 is such a host: it adds the keyword dependencies the repository's
 `meta-source.edn` declares (spec keys, re-frame events, integrant refs, atlas
-dev-ids). The
-I/O table, test paths, ignored namespaces and code generators can be set per
-repository in `~/.config/sdiff/deps.edn`, keyed by `owner/repo`.
+dev-ids).
+
+A repository states its own instructions in `diff.edn` at its root, the way
+it states meta-source's in `meta-source.edn`: more kinds of I/O, code
+generators, test paths, namespaces to ignore. sdiff reads it at the pull
+request's head and uses it for both sides, so editing it doesn't show as a
+change to every form:
+
+```clojure
+{:io {:datomic "^datomic\\."}            ; added to the built-in table
+ :generators {"hugsql" "^hugsql\\.core/def-(db|sqlvec)-fns$"}
+ :test-paths "(^|/)(test|spec)/"}
+```
+
+A key sdiff does not read is an error on the page, not ignored. The same keys
+in `~/.config/sdiff/deps.edn`, keyed by `owner/repo`, override the repository's
+for you alone.
 
 ## Derived and inferred
 
