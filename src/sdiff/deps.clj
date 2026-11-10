@@ -8,8 +8,11 @@
   methods records and reify forms implement. A call to a protocol method with
   one implementation is a call to it; with several, a possible call. Functions
   a generator defines at load time, such as HugSQL queries, show up as
-  unresolved symbols and are counted as calls to that library. Other tools add
-  edges a call graph cannot see with `add-bridge!`."
+  unresolved symbols and are counted as calls to that library.
+
+  What a keyword means is not read here: no keyword is a dependency unless a
+  host says so with `add-bridge!`, such as meta-source's review module, which
+  reads it from the repository's own meta-source.edn."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :refer [sh]]
@@ -33,11 +36,45 @@
         :s3 "^(cognitect\\.aws|software\\.amazon)"}
    :generators {"hugsql" "^hugsql\\.core/def-(db|sqlvec)-fns$"}})
 
+(def repo-file
+  "The file a repository keeps its own instructions for the review in, at its
+  root: any of `defaults`' keys, merged over them as `~/.config/sdiff/deps.edn`
+  is. Read at the pull request's head and used for both sides, so a change to
+  it is not read as a change to every form."
+  "diff.edn")
+
+(defn- merge-config [& cs] (apply merge-with #(if (map? %1) (merge %1 %2) %2) cs))
+
+(defn parse-repo-file
+  "The instructions in `text`, the content of a repository's `repo-file`, or
+  nil when it is empty. A key sdiff does not read is an error, not ignored."
+  [text]
+  (when-not (str/blank? text)
+    (let [c (edn/read-string text)
+          unknown (remove (set (keys defaults)) (keys c))]
+      (when-not (map? c) (throw (ex-info "not a map" {})))
+      (when (seq unknown)
+        (throw (ex-info (str "sdiff reads " (str/join ", " (sort (keys defaults)))
+                             ", not " (str/join ", " unknown)) {:unknown unknown})))
+      c)))
+
+(defonce ^:private repo-files (atom {}))
+
+(defn- repo-config [repo sha]
+  (or (@repo-files [repo sha])
+      (let [c (try (parse-repo-file (github/blob repo sha repo-file))
+                   (catch Exception e (throw (ex-info (str repo-file " at " (subs sha 0 (min 7 (count sha))) ": " (ex-message e)) {}))))]
+        (swap! repo-files assoc [repo sha] c)
+        c)))
+
 (defn- config-for
-  "`defaults` merged with the repository's entry in `~/.config/sdiff/deps.edn`, if any."
-  [repo]
+  "`defaults`, then the repository's `repo-file` at `head`, then its entry in
+  `~/.config/sdiff/deps.edn`, if any."
+  [repo head]
   (let [f (io/file (System/getProperty "user.home") ".config" "sdiff" "deps.edn")
-        c (merge-with #(if (map? %1) (merge %1 %2) %2) defaults (when (.exists f) (get (edn/read-string (slurp f)) repo)))]
+        c (merge-config defaults
+                        (when head (repo-config repo head))
+                        (when (.exists f) (get (edn/read-string (slurp f)) repo)))]
     (assoc c :hash (hash c))))
 
 (defonce ^:private bridges (atom []))
@@ -59,7 +96,9 @@
   "A bridge where a form that names a keyword depends on the form that defines
   it. A form defines a keyword when a call matching `defining` (a regex over the
   called var's qualified name) is followed, as its first keyword, by that
-  keyword: `(s/def ::k ...)`, or a registration such as `(register! :fn/x ...)`."
+  keyword: `(s/def ::k ...)`, or a registration such as `(register! :fn/x ...)`.
+  Nothing installs it: a host that knows which calls define keywords in a
+  repository does."
   [defining]
   (fn [{:keys [analysis form-at]}]
     (let [kws (update-vals (group-by :filename (filter :ns (:keywords analysis))) by-position)
@@ -74,8 +113,6 @@
             :let [from (form-at file (:row e)) to (defines (kw e))]
             :when (and from to (not= from to))]
         [from to]))))
-
-(add-bridge! ::spec (keyword-bridge #"^(clojure|cljs)\.spec\.alpha/def$"))
 
 (defn- top-forms [file]
   (try
@@ -221,9 +258,10 @@
 (defonce ^:private snapshots (atom {}))
 
 (defn snapshot
-  "The dependency graph of `repo` at `sha`, computed once and kept on disk."
-  [repo sha]
-  (let [config (config-for repo)
+  "The dependency graph of `repo` at `sha`, read with the instructions of
+  `head` (see `repo-file`), computed once and kept on disk."
+  [repo sha head]
+  (let [config (config-for repo head)
         k [repo sha (:hash config) (map first @bridges) 2]
         f (io/file cache-root "deps" (str (str/replace repo "/" "--") "-" sha "-" (Math/abs (hash k)) ".edn"))]
     (or (@snapshots k)
@@ -330,14 +368,16 @@
 (defonce ^:private per-report (atom {}))
 
 (defn data
-  "Base and head snapshots for a report, or `{:error msg}`."
+  "Base and head snapshots for a report, with the `:config` they were read
+  with, or `{:error msg}`."
   [report]
   (when (enabled? report)
     @swept-on-start
     (let [{:keys [repo]} (:pr report) k [repo (:base report) (:head report)]]
       (or (@per-report k)
           (let [with-callers (fn [g] (assoc g :callers (merge-with into (reverse-of (:calls g)) (reverse-of (:may g)))))
-                d (try {:base (with-callers (snapshot repo (:base report))) :head (with-callers (snapshot repo (:head report)))}
+                d (try {:base (with-callers (snapshot repo (:base report) (:head report))) :head (with-callers (snapshot repo (:head report) (:head report)))
+                     :config (config-for repo (:head report))}
                        (catch Exception e {:error (ex-message e)}))]
             (swap! per-report assoc k d)
             d)))))
@@ -404,7 +444,7 @@
   [_ctx report]
   (when-let [d (data report)]
     (when-not (:error d)
-      (let [test? (let [re (re-pattern (:test-paths defaults))] (fn [p] (re-find re p)))
+      (let [test? (let [re (re-pattern (:test-paths (:config d)))] (fn [p] (re-find re p)))
             weight (fn [form x] (cond (seq (:reaches-added x)) 0 (signature-changed? form) 1 (>= (:outside-callers x 0) 10) 2))
             rows (for [[f form x] (per-form d report)] {:k [(:path f) (decorate/form-id form)] :x x :w (weight form x) :test (test? (:path f))})
             band (fn [{:keys [w test]}] (cond test 2 w 0 :else 1))
@@ -420,7 +460,7 @@
   (when-let [d (data report)]
     (when-not (:error d)
       (let [rows (for [[f form x] (per-form d report)] [[(:path f) (decorate/form-id form)] x])
-            test? (let [re (re-pattern (:test-paths defaults))] (fn [p] (re-find re p)))
+            test? (let [re (re-pattern (:test-paths (:config d)))] (fn [p] (re-find re p)))
             band (fn [[[p] x]] (let [n (:outside-callers x 0)]
                                  (cond (:removed? x) (if (pos? (:callers-before x)) 4 5)
                                        (test? p) 6
@@ -501,7 +541,7 @@
       (when-not (:error d)
         (let [file (or (some #(when (= (:path file) (:path %)) %) (:clj report)) file)
               full (or (some #(when (= (:id form) (:id %)) %) (:forms file)) form)
-              test-file? (re-find (re-pattern (:test-paths defaults)) (str (:path file)))
+              test-file? (re-find (re-pattern (:test-paths (:config d))) (str (:path file)))
               x (when-not test-file? (form-deps d file full))
               parts (when x (line-parts x))
               rel (related-line (related d report file full))]
