@@ -63,14 +63,17 @@
         (concat binding-forms defn-forms thread-forms)))
 
 (defn top-id
-  "Identity of a top-level form: what pairs it with its counterpart on the other side."
+  "Identity of a top-level form: what pairs it with its counterpart on the other
+  side. A map, such as an EDN file's top-level map, is named by its first key."
   [node]
   (let [[hd a b] (kids (unwrap node))]
-    (case (some-> hd n/string)
-      "ns"        ["ns" (n/string a)]
-      "defmethod" ["defmethod" (n/string a) (n/string b)]
-      nil         [(name (n/tag node)) (short (n/string node))]
-      [(n/string hd) (when a (n/string a))])))
+    (if (= :map (n/tag (unwrap node)))
+      ["map" (some-> hd n/string short)]
+      (case (some-> hd n/string)
+        "ns"        ["ns" (n/string a)]
+        "defmethod" ["defmethod" (n/string a) (n/string b)]
+        nil         [(name (n/tag node)) (short (n/string node))]
+        [(n/string hd) (when a (n/string a))]))))
 
 (defn label [k] (or (head k) (name (n/tag k))))
 
@@ -452,17 +455,24 @@
 (defn paired-diff
   "Changes between two top-level forms paired by `pair-forms`. When the old
   form survives verbatim inside the new one, that is the whole story: it was
-  wrapped. Otherwise visibility, the defining operator, the name, then the body
-  by role (definitions) or by sequence (any other form)."
+  wrapped. Two maps change key by key: a map has no operator or name. Otherwise
+  visibility, the defining operator, the name, then the body by role
+  (definitions) or by sequence (any other form)."
   [a b]
   (let [a (unwrap a) b (unwrap b)
         [ha na] (kids a) [hb nb] (kids b)
         inner (some #(when (and (not= % b) (= (h a) (h %))) %) (inner-nodes b))
         defs? (and (defn-forms (head a)) (defn-forms (head b)))
         same-family? (= (str/replace (str (head a)) #"-$" "") (str/replace (str (head b)) #"-$" ""))]
-    (if inner
+    (cond
+      inner
       [{:op :wrapped :path [] :old a :new b :kept [[a inner]]}]
-     (vec (concat
+
+      (and (= :map (n/tag a)) (= :map (n/tag b)))
+      (vec (align [] (children-ids a) (children-ids b)))
+
+      :else
+      (vec (concat
           (when (not= (private? a) (private? b))
             [{:op :visibility :path [] :from (if (private? a) "private" "public") :to (if (private? b) "private" "public")}])
           (when-not same-family? [{:op :replaced :path [["head"]] :old ha :new hb}])
