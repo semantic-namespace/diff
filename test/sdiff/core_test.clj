@@ -225,3 +225,13 @@
         "an edit to one repeat is a change to that repeat")
     (is (= [:whitespace-only []]
            (summary (str "(ns a)\n" first-def last-def) (str "(ns a)\n" first-def "\n" last-def))))))
+
+(deftest a-top-level-map-changes-by-key
+  (let [old "{:endpoint/a\n {:type :get\n  :deps [:db :log]}}\n"
+        new "{:endpoint/a\n {:type :get\n  :deps [:db :log :cache]}}\n"
+        r (c/file-report "registry.edn" old new)
+        [form] (:forms r)]
+    (is (= ["map" ":endpoint/a"] (:id form)) "a map is named by its first key, not by its first value")
+    (is (nil? (:was form)) "a value edited is not a renamed form")
+    (is (= [[:added [["key" ":endpoint/a"] ["key" ":deps"] ["#3 :cache"]]]]
+           (mapv (juxt :op :path) (:changes form))))))
